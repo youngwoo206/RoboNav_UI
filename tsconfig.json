@@ -13,7 +13,23 @@
     "isolatedModules": true,
     "noEmit": true,
     "jsx": "react-jsx",
-
+    "paths": {
+      "@/*" : [
+        "./src/*"
+      ],
+      "components/*" : [
+        "./src/components/*"
+      ],
+      "assets/*" : [
+        "./src/assets/*"
+      ],
+      "api/*" : [
+        "./src/api/*"
+      ],
+      "utilities/*" : [
+        "./src/utilities/*"
+      ]
+    },
     /* Linting */
     "strict": true,
     "noUnusedLocals": true,
