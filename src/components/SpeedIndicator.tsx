@@ -10,22 +10,20 @@ function SpeedIndicator({ speed, maxSpeed }: SpeedIndicatorProps) {
     speeds.push(maxSpeed - i + 1);
   }
 
+  //NOTE: grid-rows-maxSpeed is hardcoded
+
   return (
     <div className="w-15 h-15 flex justify-center">
-      <div
-        className={`w-6 h-15 bg-slate-50 grid grid-rows-${
-          maxSpeed + 1
-        } grid-cols-1`}
-        style={{
-          gridTemplateRows: `repeat(${maxSpeed + 1}, minmax(0, 1fr))`, // Dynamically set rows
-        }}
-      >
-        {speeds.map((row_id) => (
-          <div
-            key={row_id}
-            className={`w-6 h-3 bg-amber-300 row-start-${row_id}`}
-          />
-        ))}
+      <div className={`w-6 h-15 bg-slate-50 grid grid-rows-5 grid-cols-1`}>
+        {speeds.map((row_id) => {
+          return (
+            <div
+              key={row_id}
+              className="w-6 h-3 bg-amber-300"
+              style={{ gridRowStart: row_id }}
+            />
+          );
+        })}
       </div>
     </div>
   );

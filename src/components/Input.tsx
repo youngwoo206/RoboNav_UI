@@ -125,6 +125,8 @@ function Input() {
   //     console.log(`Direction: ${direction}`);
   //   }, [direction, removeDirection]);
 
+  //NOTE: grid-rows-maxSpeed is hardcoded
+
   return (
     <div className="rounded-lg bg-gray-100 w-165 h-80 flex items-center justify-between gap-5 p-5">
       <div className="w-70 h-70 rounded-lg bg-gray-200 grid grid-cols-3 grid-rows-3 gap-5 p-5 align-middle justify-center">
