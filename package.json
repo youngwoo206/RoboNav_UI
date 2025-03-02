@@ -10,6 +10,8 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "iohook": "^0.9.3",
+    "node-global-key-listener": "^0.3.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "vite-tsconfig-paths": "^5.1.4"
@@ -33,6 +35,21 @@
     "vite": "^5.1.6",
     "vite-plugin-electron": "^0.28.6",
     "vite-plugin-electron-renderer": "^0.14.5"
+  },
+  "iohook": {
+    "targets": [
+      "node-72",
+      "electron-85"
+    ],
+    "platforms": [
+      "win32",
+      "darwin",
+      "linux"
+    ],
+    "arches": [
+      "x64",
+      "ia32"
+    ]
   },
   "main": "dist-electron/main.js"
 }
