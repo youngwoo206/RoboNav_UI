@@ -30,7 +30,9 @@ function App() {
       console.log("Connection to websocket server closed");
     });
 
-    setRos(newRos);
+    setRos("ROS: ", newRos);
+
+    console.log(ros)
 
     return () => {
       newRos.close();
@@ -38,7 +40,7 @@ function App() {
   }, []);
 
   return (
-    <div className="h-[90vh] flex justify-center ">
+    <div className="flex justify-center ">
       <div className="bg-amber-100 mt-[10vh] grid grid-cols-2 gap-2">
         <Camera />
         <Lidar />
