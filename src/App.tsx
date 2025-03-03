@@ -7,7 +7,6 @@ import ROSLIB, { Ros } from "roslib";
 
 function App() {
   const [connected, setConnected] = useState<boolean>(false);
-  const [message, setMessage] = useState("");
   const [ros, setRos] = useState<null | Ros>(null);
 
   useEffect(() => {
@@ -30,9 +29,9 @@ function App() {
       console.log("Connection to websocket server closed");
     });
 
-    setRos("ROS: ", newRos);
+    setRos(newRos);
 
-    console.log(ros)
+    console.log("ROS: ", ros);
 
     return () => {
       newRos.close();
@@ -45,7 +44,7 @@ function App() {
         <Camera />
         <Lidar />
         <Input />
-        <Stats connection={connected} />
+        <Stats connection={connected} ros={ros} />
       </div>
     </div>
   );
