@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import Input from "./components/Input";
+import Camera from "./components/Camera";
 
 function App() {
   return (
@@ -9,6 +10,9 @@ function App() {
           <p>main</p>
         </div>
         <Input />
+        <div className="h-60">
+          <Camera />
+        </div>
       </div>
     </div>
   );
