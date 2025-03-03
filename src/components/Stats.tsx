@@ -10,6 +10,7 @@ function Stats({ connection, ros }: StatsProps) {
   const [message, setMessage] = useState<any>("");
 
   useEffect(() => {
+    console.log("ROS: ", ros);
     if (ros) {
       // Subscribe to a topic
       const exampleTopic = new ROSLIB.Topic({
