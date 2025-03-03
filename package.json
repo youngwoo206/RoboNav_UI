@@ -10,10 +10,12 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@types/roslib": "^1.3.5",
     "iohook": "^0.9.3",
     "node-global-key-listener": "^0.3.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
+    "roslib": "^1.4.1",
     "vite-tsconfig-paths": "^5.1.4"
   },
   "devDependencies": {
