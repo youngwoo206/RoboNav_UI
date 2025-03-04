@@ -9,11 +9,11 @@ interface CameraProps {
 function Camera({ connection, ros }: CameraProps) {
   const [imageSrc, setImageSrc] = useState<string | null>(null);
 
-  const CAMERA_TOPIC = "/husky3/camera_0/image_raw/compressed"; // Ensure this topic exists
-  const MESSAGE_TYPE = "sensor_msgs/CompressedImage";
+  const CAMERA_TOPIC = "/husky3/camera_0/color/image_raw/compressed"; // Ensure this topic exists
+  const MESSAGE_TYPE = "sensor_msgs/msg/CompressedImage";
 
   useEffect(() => {
-    if (ros) {
+    if (ros && connection) {
       const listener = new ROSLIB.Topic({
         ros,
         name: CAMERA_TOPIC,
@@ -22,18 +22,19 @@ function Camera({ connection, ros }: CameraProps) {
 
       listener.subscribe((message) => {
         // Type assertion to make sure the message has the correct structure
-        const imageMessage = message as { data: string };
-        const imageData = `data:image/jpeg;base64,${imageMessage.data}`;
+        const compressedImage = message as { format: string; data: Uint8Array };
+        const base64 = btoa(Array.from(compressedImage.data).map(byte => String.fromCharCode(byte)).join(''))
+
+        const imageData = `data:image/${compressedImage.format};base64,${base64}`;
         setImageSrc(imageData);
       });
 
       // Cleanup on unmount
       return () => {
         listener.unsubscribe();
-        ros.close();
       };
     }
-  }, [ros]);
+  }, [ros, connection]);
 
   return (
     <div className="rounded-lg bg-gray-100 w-165 h-80">

@@ -31,8 +31,6 @@ function App() {
 
     setRos(newRos);
 
-    console.log("ROS: ", ros);
-
     return () => {
       newRos.close();
     };
