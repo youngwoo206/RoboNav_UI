@@ -128,28 +128,33 @@ function Input() {
   //NOTE: grid-rows-maxSpeed is hardcoded
 
   return (
-    <div className="rounded-lg bg-gray-100 w-165 h-80 flex items-center justify-between gap-5 p-5">
-      <div className="w-70 h-70 rounded-lg bg-gray-200 grid grid-cols-3 grid-rows-3 gap-5 p-5 align-middle justify-center">
-        <Key letter="q" />
-        <Key letter="w" />
-        <Key letter="e" />
-        <SpeedIndicator speed={overallSpeed} maxSpeed={maxSpeed} />
-        <SpeedIndicator speed={linearSpeed} maxSpeed={maxSpeed} />
-        <SpeedIndicator speed={angularSpeed} maxSpeed={maxSpeed} />
-        <Key letter="z" />
-        <Key letter="x" />
-        <Key letter="c" />
+    <div className="rounded-lg bg-gray-100 w-165 h-80 justify-center p-5">
+      <div className="flex items-center justify-between gap-5">
+        <div className="w-70 h-60 rounded-lg bg-gray-200 grid grid-cols-3 grid-rows-3 gap-5 p-5 align-middle justify-center">
+          <Key letter="q" />
+          <Key letter="w" />
+          <Key letter="e" />
+          <SpeedIndicator speed={overallSpeed} maxSpeed={maxSpeed} />
+          <SpeedIndicator speed={linearSpeed} maxSpeed={maxSpeed} />
+          <SpeedIndicator speed={angularSpeed} maxSpeed={maxSpeed} />
+          <Key letter="z" />
+          <Key letter="x" />
+          <Key letter="c" />
+        </div>
+        <div className="w-70 h-60 rounded-lg bg-gray-200 grid grid-cols-3 grid-rows-3 gap-5 p-5 align-middle justify-center">
+          <Key letter="u" />
+          <Key letter="i" />
+          <Key letter="o" />
+          <Key letter="j" />
+          <Key letter="k" />
+          <Key letter="l" />
+          <Key letter="m" />
+          <Key letter="," />
+          <Key letter="." />
+        </div>
       </div>
-      <div className="w-70 h-70 rounded-lg bg-gray-200 grid grid-cols-3 grid-rows-3 gap-5 p-5 align-middle justify-center">
-        <Key letter="u" />
-        <Key letter="i" />
-        <Key letter="o" />
-        <Key letter="j" />
-        <Key letter="k" />
-        <Key letter="l" />
-        <Key letter="m" />
-        <Key letter="," />
-        <Key letter="." />
+      <div className="h-10 w-72 bg-red-200 rounded-md px-3 font-semibold mx-auto mt-3 text-center">
+        Space for E-Stop
       </div>
     </div>
   );
