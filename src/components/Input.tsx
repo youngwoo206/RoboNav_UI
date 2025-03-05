@@ -34,7 +34,7 @@ function Input({ ros, connection }: RosIntegrationProps) {
 
   // ROS Topic for Cmd Velocity
   const CMD_VEL_TOPIC = "/husky3/cmd_vel";
-  const CMD_VEL_TYPE = "geometry_msgs/Twist";
+  const CMD_VEL_TYPE = "geometry_msgs/msg/Twist";
 
   // Create a ROS publisher for cmd_vel
   const cmdVelPublisher = ros ? new ROSLIB.Topic({
@@ -45,7 +45,14 @@ function Input({ ros, connection }: RosIntegrationProps) {
 
   // Publish velocity commands to ROS
   const publishVelocityCommand = () => {
-    if (!ros || !connection || !cmdVelPublisher) return;
+    if (!ros || !connection || !cmdVelPublisher){
+      console.error("Cannot publish", {
+        ros: !!ros,
+        connection,
+        publisher: !!cmdVelPublisher
+      });
+     return;
+    }
 
     // Create Twist message with explicit typing
     const twistMsg: TwistMessage = {
