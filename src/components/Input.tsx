@@ -1,22 +1,125 @@
 import { useState, useEffect } from "react";
+import ROSLIB from "roslib";
 import Key from "./Key";
 import SpeedIndicator from "./SpeedIndicator";
 
-function Input() {
+// Define the Twist message interface matching ROS geometry_msgs/Twist
+interface TwistMessage {
+  linear: {
+    x: number;
+    y: number;
+    z: number;
+  };
+  angular: {
+    x: number;
+    y: number;
+    z: number;
+  };
+}
+
+interface RosIntegrationProps {
+  ros: ROSLIB.Ros | null;
+  connection: boolean;
+}
+
+function Input({ ros, connection }: RosIntegrationProps) {
   const [direction, setDirection] = useState<string | null>(null);
   const [removeDirection, setRemoveDirection] = useState<string | null>(null);
 
-  const [overallSpeed, setOverallSpeed] = useState<number>(0); //temp, pull from ros data
-  const [linearSpeed, setLinearSpeed] = useState<number>(0); //temp, pull from ros data
-  const [angularSpeed, setAngularSpeed] = useState<number>(0); //temp, pull from ros data
+  const [overallSpeed, setOverallSpeed] = useState<number>(0);
+  const [linearSpeed, setLinearSpeed] = useState<number>(0);
+  const [angularSpeed, setAngularSpeed] = useState<number>(0);
 
-  const maxSpeed: number = 4; //temp, pull from ros data
+  const maxSpeed: number = 4;
+
+  // ROS Topic for Cmd Velocity
+  const CMD_VEL_TOPIC = "/husky3/cmd_vel";
+  const CMD_VEL_TYPE = "geometry_msgs/Twist";
+
+  // Create a ROS publisher for cmd_vel
+  const cmdVelPublisher = ros ? new ROSLIB.Topic({
+    ros,
+    name: CMD_VEL_TOPIC,
+    messageType: CMD_VEL_TYPE
+  }) : null;
+
+  // Publish velocity commands to ROS
+  const publishVelocityCommand = () => {
+    if (!ros || !connection || !cmdVelPublisher) return;
+
+    // Create Twist message with explicit typing
+    const twistMsg: TwistMessage = {
+      linear: {
+        x: linearSpeed,
+        y: 0,
+        z: 0
+      },
+      angular: {
+        x: 0,
+        y: 0,
+        z: angularSpeed
+      }
+    };
+
+    // Modify linear velocity based on direction
+    switch (direction) {
+      case 'u': // Forward-Left
+        twistMsg.linear.x = linearSpeed;
+        twistMsg.angular.z = angularSpeed;
+        break;
+      case 'i': // Forward
+        twistMsg.linear.x = linearSpeed;
+        break;
+      case 'o': // Forward-Right
+        twistMsg.linear.x = linearSpeed;
+        twistMsg.angular.z = -angularSpeed;
+        break;
+      case 'j': // Left
+        twistMsg.angular.z = angularSpeed;
+        break;
+      case 'k': // Stop
+        twistMsg.linear.x = 0;
+        twistMsg.angular.z = 0;
+        break;
+      case 'l': // Right
+        twistMsg.angular.z = -angularSpeed;
+        break;
+      case 'm': // Backward-Left
+        twistMsg.linear.x = -linearSpeed;
+        twistMsg.angular.z = angularSpeed;
+        break;
+      case ',': // Backward
+        twistMsg.linear.x = -linearSpeed;
+        break;
+      case '.': // Backward-Right
+        twistMsg.linear.x = -linearSpeed;
+        twistMsg.angular.z = -angularSpeed;
+        break;
+    }
+
+    // Publish the message
+    cmdVelPublisher.publish(new ROSLIB.Message(twistMsg));
+  };
+
+  // Publish velocity whenever direction or speeds change
+  useEffect(() => {
+    publishVelocityCommand();
+  }, [direction, linearSpeed, angularSpeed, connection]);
 
   const handleKeyUp = (event: KeyboardEvent) => {
     const key = event.key;
     if (["u", "i", "o", "j", "k", "l", "m", ",", "."].includes(key)) {
       setRemoveDirection(() => key);
       setDirection(() => null);
+      
+      // Publish stop command when direction is released
+      if (cmdVelPublisher) {
+        const stopMsg: TwistMessage = {
+          linear: { x: 0, y: 0, z: 0 },
+          angular: { x: 0, y: 0, z: 0 }
+        };
+        cmdVelPublisher.publish(new ROSLIB.Message(stopMsg));
+      }
     } else if (["q", "z", "w", "x", "e", "c"].includes(key)) {
       const el = document.getElementById(key);
       el?.classList.remove("text-red-500", "scale-96", "shadow-inner");
@@ -121,12 +224,6 @@ function Input() {
     };
   }, []);
 
-  //   useEffect(() => {
-  //     console.log(`Direction: ${direction}`);
-  //   }, [direction, removeDirection]);
-
-  //NOTE: grid-rows-maxSpeed is hardcoded
-
   return (
     <div className="rounded-lg bg-gray-100 w-165 h-80 justify-center p-5">
       <div className="flex items-center justify-between gap-5">
@@ -156,6 +253,11 @@ function Input() {
       <div className="h-10 w-72 bg-red-200 rounded-md px-3 font-semibold mx-auto mt-3 text-center">
         Space for E-Stop
       </div>
+      {/* {!connection && (
+        <div className="absolute inset-0 bg-black bg-opacity-50 flex items-center justify-center">
+          <p className="text-white">ROS Not Connected</p>
+        </div>
+      )} */}
     </div>
   );
 }

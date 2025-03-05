@@ -41,7 +41,7 @@ function App() {
       <div className="bg-amber-100 mt-[10vh] grid grid-cols-2 gap-2">
         <Camera connection={connected} ros={ros} />
         <Lidar />
-        <Input />
+        <Input connection = {connected} ros = {ros}/>
         <Stats connection={connected} ros={ros} />
       </div>
     </div>
