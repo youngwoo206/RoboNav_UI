@@ -3,6 +3,7 @@ import Input from "./components/Input";
 import Camera from "./components/Camera";
 import Lidar from "./components/Lidar";
 import Stats from "./components/Stats";
+import SLAM from "./components/SLAM";
 import ROSLIB, { Ros } from "roslib";
 
 function App() {
@@ -40,7 +41,8 @@ function App() {
     <div className="flex justify-center ">
       <div className="bg-amber-100 mt-[10vh] grid grid-cols-2 gap-2">
         <Camera connection={connected} ros={ros} />
-        <Lidar />
+        {/* <Lidar connection={connected} ros={ros} /> */}
+        <SLAM connection={true} ros={ros} />
         <Input />
         <Stats connection={connected} ros={ros} />
       </div>
