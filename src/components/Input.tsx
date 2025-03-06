@@ -1,9 +1,9 @@
-import { useState, useEffect } from "react";
+/* eslint-disable @typescript-eslint/no-unused-vars */
+import { useState, useEffect, useRef } from "react";
 import ROSLIB from "roslib";
 import Key from "./Key";
 import SpeedIndicator from "./SpeedIndicator";
 
-// Define the Twist message interface matching ROS geometry_msgs/Twist
 interface TwistMessage {
   linear: {
     x: number;
@@ -25,14 +25,11 @@ interface RosIntegrationProps {
 function Input({ ros, connection }: RosIntegrationProps) {
   const [direction, setDirection] = useState<string | null>(null);
   const [removeDirection, setRemoveDirection] = useState<string | null>(null);
-
   const [overallSpeed, setOverallSpeed] = useState<number>(0);
   const [linearSpeed, setLinearSpeed] = useState<number>(1.0);
   const [angularSpeed, setAngularSpeed] = useState<number>(1.0);
   const [keyPressed, setKeyPressed] = useState<Record<string, boolean>>({});
-  //const [isKeyHeld, setIsKeyHeld] = useState<boolean>(false);
-  //const publishIntervalRef = useRef<number | null>(null);
-
+  const intervalRef = useRef<number | null>(null);
   const maxSpeed: number = 4;
 
   // ROS Topic for Cmd Velocity
@@ -48,13 +45,13 @@ function Input({ ros, connection }: RosIntegrationProps) {
 
   // Publish velocity commands to ROS
   const publishVelocityCommand = () => {
-    if (!ros || !connection || !cmdVelPublisher){
+    if (!ros || !connection || !cmdVelPublisher) {
       console.error("Cannot publish", {
         ros: !!ros,
         connection,
         publisher: !!cmdVelPublisher
       });
-     return;
+      return;
     }
 
     // Create Twist message with explicit typing
@@ -71,32 +68,29 @@ function Input({ ros, connection }: RosIntegrationProps) {
       }
     };
 
-    // const activeDirectionKeys = Object.keys(keyPressed).filter(key =>
-    //   keyPressed[key] && ["u","i","o","j","k","l","m",",","."].includes(key)
-    // );
+    // Apply speed modifier
+    const speedFactor = Math.max(1, overallSpeed);
+    const currentLinearSpeed = linearSpeed * speedFactor;
+    const currentAngularSpeed = angularSpeed * speedFactor;
 
-    // const activeDirection = activeDirectionKeys.length > 0 ?
-    //   activeDirectionKeys[activeDirectionKeys.length-1] : null;
-
-
-    // Modify linear velocity based on direction
-    if (direction){
+    // Modify velocity based on direction
+    if (direction) {
       switch (direction) {
         case 'u': // Forward-Left
-          twistMsg.linear.x = linearSpeed;
-          twistMsg.angular.z = angularSpeed;
+          twistMsg.linear.x = currentLinearSpeed;
+          twistMsg.angular.z = currentAngularSpeed;
           break;
         case 'i': // Forward
-          twistMsg.linear.x = linearSpeed;
+          twistMsg.linear.x = currentLinearSpeed;
           twistMsg.angular.z = 0;
           break;
         case 'o': // Forward-Right
-          twistMsg.linear.x = linearSpeed;
-          twistMsg.angular.z = -angularSpeed;
+          twistMsg.linear.x = currentLinearSpeed;
+          twistMsg.angular.z = -currentAngularSpeed;
           break;
         case 'j': // Left
           twistMsg.linear.x = 0;
-          twistMsg.angular.z = angularSpeed;
+          twistMsg.angular.z = currentAngularSpeed;
           break;
         case 'k': // Stop
           twistMsg.linear.x = 0;
@@ -104,56 +98,87 @@ function Input({ ros, connection }: RosIntegrationProps) {
           break;
         case 'l': // Right
           twistMsg.linear.x = 0;
-          twistMsg.angular.z = -angularSpeed;
+          twistMsg.angular.z = -currentAngularSpeed;
           break;
         case 'm': // Backward-Left
-          twistMsg.linear.x = -linearSpeed;
-          twistMsg.angular.z = angularSpeed;
+          twistMsg.linear.x = -currentLinearSpeed;
+          twistMsg.angular.z = currentAngularSpeed;
           break;
         case ',': // Backward
-          twistMsg.linear.x = -linearSpeed;
+          twistMsg.linear.x = -currentLinearSpeed;
           twistMsg.angular.z = 0;
           break;
         case '.': // Backward-Right
-          twistMsg.linear.x = -linearSpeed;
-          twistMsg.angular.z = -angularSpeed;
+          twistMsg.linear.x = -currentLinearSpeed;
+          twistMsg.angular.z = -currentAngularSpeed;
           break;
       }
-  }
+    }
+
     // Publish the message
     cmdVelPublisher.publish(new ROSLIB.Message(twistMsg));
+    console.log("Publishing Command:", JSON.stringify(twistMsg));
   };
 
-  useEffect(() => {
-    const interval = setInterval(() => {
-      publishVelocityCommand();
+  // Explicitly send a stop command
+  const sendStopCommand = () => {
+    if (!ros || !connection || !cmdVelPublisher) return;
+    
+    const stopMsg: TwistMessage = {
+      linear: { x: 0, y: 0, z: 0 },
+      angular: { x: 0, y: 0, z: 0 }
+    };
+    
+    // Send stop command multiple times to ensure it's received
+    cmdVelPublisher.publish(new ROSLIB.Message(stopMsg));
+    setTimeout(() => {
+      if (cmdVelPublisher) cmdVelPublisher.publish(new ROSLIB.Message(stopMsg));
+    }, 50);
+    setTimeout(() => {
+      if (cmdVelPublisher) cmdVelPublisher.publish(new ROSLIB.Message(stopMsg));
     }, 100);
+  };
 
-    return () => clearInterval(interval);
-  }, [keyPressed,linearSpeed, angularSpeed, direction, connection]);
+  // Update interval when direction changes
+  useEffect(() => {
+    // Clear any existing interval
+    if (intervalRef.current !== null) {
+      clearInterval(intervalRef.current);
+      intervalRef.current = null;
+    }
 
-  // Publish velocity whenever direction or speeds change
-  // useEffect(() => {
-  //   publishVelocityCommand();
-  // }, [direction, linearSpeed, angularSpeed, connection]);
+    // If there's a direction, start publishing
+    if (direction) {
+      intervalRef.current = window.setInterval(() => {
+        publishVelocityCommand();
+      }, 100) as unknown as number;
+    } else {
+      // If no direction, send a stop command
+      sendStopCommand();
+    }
+
+    // Cleanup on unmount or direction change
+    return () => {
+      if (intervalRef.current !== null) {
+        clearInterval(intervalRef.current);
+        intervalRef.current = null;
+      }
+    };
+  }, [direction, connection, ros]);
+
+  // Update when speeds change
+  useEffect(() => {
+    if (direction) {
+      publishVelocityCommand();
+    }
+  }, [linearSpeed, angularSpeed, overallSpeed]);
 
   const handleKeyUp = (event: KeyboardEvent) => {
     const key = event.key;
     if (["u", "i", "o", "j", "k", "l", "m", ",", "."].includes(key)) {
-      setKeyPressed(prev => ({...prev, [key]: false}));
-      setRemoveDirection(() => key);
-      setDirection(null);
-  
-
-      
-      // Publish stop command when direction is released
-      if (cmdVelPublisher) {
-        const stopMsg: TwistMessage = {
-          linear: { x: 0, y: 0, z: 0 },
-          angular: { x: 0, y: 0, z: 0 }
-        };
-        cmdVelPublisher.publish(new ROSLIB.Message(stopMsg));
-      }
+      setKeyPressed(prev => ({ ...prev, [key]: false }));
+      setRemoveDirection(key);
+      setDirection(null); // This will trigger the effect to stop the robot
     } else if (["q", "z", "w", "x", "e", "c"].includes(key)) {
       const el = document.getElementById(key);
       el?.classList.remove("text-red-500", "scale-96", "shadow-inner");
@@ -165,80 +190,36 @@ function Input({ ros, connection }: RosIntegrationProps) {
 
     // Handle direction keys
     if (["u", "i", "o", "j", "k", "l", "m", ",", "."].includes(key)) {
-      setKeyPressed(prev => ({...prev, [key]: true}));
+      setKeyPressed(prev => ({ ...prev, [key]: true }));
       setDirection(key);
-
     }
-    // Handle overallSpeed (q > increase, z > decrease)
-    else if (["q", "z"].includes(key)) {
+    // Handle speed controls
+    else if (["q", "z", "w", "x", "e", "c"].includes(key)) {
       const el = document.getElementById(key);
       el?.classList.add("text-red-500", "scale-96", "shadow-inner");
+      
+      // Overall speed
       if (key === "q") {
-        setOverallSpeed((prev) => {
-          if (prev < maxSpeed) {
-            return prev + 1;
-          }
-          return prev; // No change if maxSpeed is reached
-        });
+        setOverallSpeed(prev => Math.min(prev + 1, maxSpeed));
       } else if (key === "z") {
-        setOverallSpeed((prev) => {
-          if (prev > 0) {
-            return prev - 1;
-          }
-          return prev; // No change if speed is already 0
-        });
+        setOverallSpeed(prev => Math.max(prev - 1, 0));
       }
-    }
-    // Handle linearSpeed (w > increase, x > decrease)
-    else if (["w", "x"].includes(key)) {
-      const el = document.getElementById(key);
-      el?.classList.add("text-red-500", "scale-96", "shadow-inner");
-      if (key === "w") {
-        setLinearSpeed((prev) => {
-          if (prev < maxSpeed) {
-            return prev + 1;
-          }
-          return prev; // No change if maxSpeed is reached
-        });
+      // Linear speed
+      else if (key === "w") {
+        setLinearSpeed(prev => Math.min(prev + 1, maxSpeed));
       } else if (key === "x") {
-        setLinearSpeed((prev) => {
-          if (prev > 0) {
-            return prev - 1;
-          }
-          return prev; // No change if speed is already 0
-        });
+        setLinearSpeed(prev => Math.max(prev - 1, 0.1));
       }
-    }
-    // Handle angularSpeed (e > increase, c > decrease)
-    else if (["e", "c"].includes(key)) {
-      const el = document.getElementById(key);
-      el?.classList.add("text-red-500", "scale-96", "shadow-inner");
-      if (key === "e") {
-        setAngularSpeed((prev) => {
-          if (prev < maxSpeed) {
-            return prev + 1;
-          }
-          return prev; // No change if maxSpeed is reached
-        });
+      // Angular speed
+      else if (key === "e") {
+        setAngularSpeed(prev => Math.min(prev + 1, maxSpeed));
       } else if (key === "c") {
-        setAngularSpeed((prev) => {
-          if (prev > 0) {
-            return prev - 1;
-          }
-          return prev; // No change if speed is already 0
-        });
+        setAngularSpeed(prev => Math.max(prev - 1, 0.1));
       }
     }
   };
 
-  // useEffect(() => {
-  //   return () => {
-  //     if (publishIntervalRef.current){
-  //       window.clearInterval(publishIntervalRef.current);
-  //     }
-  //   }
-  // }, []);
-
+  // Visual feedback for key presses
   useEffect(() => {
     if (direction) {
       const el = document.getElementById(direction);
@@ -250,26 +231,39 @@ function Input({ ros, connection }: RosIntegrationProps) {
     if (removeDirection) {
       const el = document.getElementById(removeDirection);
       el?.classList.remove("text-red-500", "scale-96", "shadow-inner");
-      setRemoveDirection(() => null);
+      setRemoveDirection(null);
     }
   }, [removeDirection]);
 
+  // Add event listeners
   useEffect(() => {
     window.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("keyup", handleKeyUp);
+    
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("keyup", handleKeyUp);
+      
+      // Make sure to send a stop command when unmounting
+      sendStopCommand();
     };
   }, []);
+
+  //debugging
+  useEffect(() => {
+    console.log("ROS Connection Status:", connection)
+  }, [connection]);
 
   useEffect(() => {
-    window.addEventListener("keyup", handleKeyUp);
-    return () => {
-      window.removeEventListener("keyup", handleKeyUp);
-    };
-  }, []);
+    if (ros&&connection){
+      console.log("ROS is connected, publisher available", !!cmdVelPublisher);
+    }
+  }, [ros, connection]);
+
+
 
   return (
-    <div className="rounded-lg bg-gray-100 w-165 h-80 justify-center p-5">
+    <div className="rounded-lg bg-gray-100 w-165 h-80 justify-center p-5 relative">
       <div className="flex items-center justify-between gap-5">
         <div className="w-70 h-60 rounded-lg bg-gray-200 grid grid-cols-3 grid-rows-3 gap-5 p-5 align-middle justify-center">
           <Key letter="q" />
@@ -294,14 +288,21 @@ function Input({ ros, connection }: RosIntegrationProps) {
           <Key letter="." />
         </div>
       </div>
-      <div className="h-10 w-72 bg-red-200 rounded-md px-3 font-semibold mx-auto mt-3 text-center">
+      <div 
+        id="e-stop"
+        className="h-10 w-72 bg-red-200 rounded-md px-3 font-semibold mx-auto mt-3 text-center flex items-center justify-center cursor-pointer"
+        onClick={() => {
+          setDirection(null);
+          sendStopCommand();
+        }}
+      >
         Space for E-Stop
       </div>
-      {/* {!connection && (
-        <div className="absolute inset-0 bg-black bg-opacity-50 flex items-center justify-center">
-          <p className="text-white">ROS Not Connected</p>
+      {!connection && (
+        <div className="absolute inset-0 bg-black bg-opacity-50 flex items-center justify-center rounded-lg">
+          <p className="text-white font-bold">ROS Not Connected</p>
         </div>
-      )} */}
+      )}
     </div>
   );
 }
