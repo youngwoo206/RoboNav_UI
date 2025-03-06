@@ -27,8 +27,11 @@ function Input({ ros, connection }: RosIntegrationProps) {
   const [removeDirection, setRemoveDirection] = useState<string | null>(null);
 
   const [overallSpeed, setOverallSpeed] = useState<number>(0);
-  const [linearSpeed, setLinearSpeed] = useState<number>(0);
-  const [angularSpeed, setAngularSpeed] = useState<number>(0);
+  const [linearSpeed, setLinearSpeed] = useState<number>(1.0);
+  const [angularSpeed, setAngularSpeed] = useState<number>(1.0);
+  const [keyPressed, setKeyPressed] = useState<Record<string, boolean>>({});
+  //const [isKeyHeld, setIsKeyHeld] = useState<boolean>(false);
+  //const publishIntervalRef = useRef<number | null>(null);
 
   const maxSpeed: number = 4;
 
@@ -57,67 +60,91 @@ function Input({ ros, connection }: RosIntegrationProps) {
     // Create Twist message with explicit typing
     const twistMsg: TwistMessage = {
       linear: {
-        x: linearSpeed,
+        x: 0,
         y: 0,
         z: 0
       },
       angular: {
         x: 0,
         y: 0,
-        z: angularSpeed
+        z: 0
       }
     };
 
-    // Modify linear velocity based on direction
-    switch (direction) {
-      case 'u': // Forward-Left
-        twistMsg.linear.x = linearSpeed;
-        twistMsg.angular.z = angularSpeed;
-        break;
-      case 'i': // Forward
-        twistMsg.linear.x = linearSpeed;
-        break;
-      case 'o': // Forward-Right
-        twistMsg.linear.x = linearSpeed;
-        twistMsg.angular.z = -angularSpeed;
-        break;
-      case 'j': // Left
-        twistMsg.angular.z = angularSpeed;
-        break;
-      case 'k': // Stop
-        twistMsg.linear.x = 0;
-        twistMsg.angular.z = 0;
-        break;
-      case 'l': // Right
-        twistMsg.angular.z = -angularSpeed;
-        break;
-      case 'm': // Backward-Left
-        twistMsg.linear.x = -linearSpeed;
-        twistMsg.angular.z = angularSpeed;
-        break;
-      case ',': // Backward
-        twistMsg.linear.x = -linearSpeed;
-        break;
-      case '.': // Backward-Right
-        twistMsg.linear.x = -linearSpeed;
-        twistMsg.angular.z = -angularSpeed;
-        break;
-    }
+    // const activeDirectionKeys = Object.keys(keyPressed).filter(key =>
+    //   keyPressed[key] && ["u","i","o","j","k","l","m",",","."].includes(key)
+    // );
 
+    // const activeDirection = activeDirectionKeys.length > 0 ?
+    //   activeDirectionKeys[activeDirectionKeys.length-1] : null;
+
+
+    // Modify linear velocity based on direction
+    if (direction){
+      switch (direction) {
+        case 'u': // Forward-Left
+          twistMsg.linear.x = linearSpeed;
+          twistMsg.angular.z = angularSpeed;
+          break;
+        case 'i': // Forward
+          twistMsg.linear.x = linearSpeed;
+          twistMsg.angular.z = 0;
+          break;
+        case 'o': // Forward-Right
+          twistMsg.linear.x = linearSpeed;
+          twistMsg.angular.z = -angularSpeed;
+          break;
+        case 'j': // Left
+          twistMsg.linear.x = 0;
+          twistMsg.angular.z = angularSpeed;
+          break;
+        case 'k': // Stop
+          twistMsg.linear.x = 0;
+          twistMsg.angular.z = 0;
+          break;
+        case 'l': // Right
+          twistMsg.linear.x = 0;
+          twistMsg.angular.z = -angularSpeed;
+          break;
+        case 'm': // Backward-Left
+          twistMsg.linear.x = -linearSpeed;
+          twistMsg.angular.z = angularSpeed;
+          break;
+        case ',': // Backward
+          twistMsg.linear.x = -linearSpeed;
+          twistMsg.angular.z = 0;
+          break;
+        case '.': // Backward-Right
+          twistMsg.linear.x = -linearSpeed;
+          twistMsg.angular.z = -angularSpeed;
+          break;
+      }
+  }
     // Publish the message
     cmdVelPublisher.publish(new ROSLIB.Message(twistMsg));
   };
 
-  // Publish velocity whenever direction or speeds change
   useEffect(() => {
-    publishVelocityCommand();
-  }, [direction, linearSpeed, angularSpeed, connection]);
+    const interval = setInterval(() => {
+      publishVelocityCommand();
+    }, 100);
+
+    return () => clearInterval(interval);
+  }, [keyPressed,linearSpeed, angularSpeed, direction, connection]);
+
+  // Publish velocity whenever direction or speeds change
+  // useEffect(() => {
+  //   publishVelocityCommand();
+  // }, [direction, linearSpeed, angularSpeed, connection]);
 
   const handleKeyUp = (event: KeyboardEvent) => {
     const key = event.key;
     if (["u", "i", "o", "j", "k", "l", "m", ",", "."].includes(key)) {
+      setKeyPressed(prev => ({...prev, [key]: false}));
       setRemoveDirection(() => key);
-      setDirection(() => null);
+      setDirection(null);
+  
+
       
       // Publish stop command when direction is released
       if (cmdVelPublisher) {
@@ -138,7 +165,9 @@ function Input({ ros, connection }: RosIntegrationProps) {
 
     // Handle direction keys
     if (["u", "i", "o", "j", "k", "l", "m", ",", "."].includes(key)) {
-      setDirection(() => key);
+      setKeyPressed(prev => ({...prev, [key]: true}));
+      setDirection(key);
+
     }
     // Handle overallSpeed (q > increase, z > decrease)
     else if (["q", "z"].includes(key)) {
@@ -201,6 +230,14 @@ function Input({ ros, connection }: RosIntegrationProps) {
       }
     }
   };
+
+  // useEffect(() => {
+  //   return () => {
+  //     if (publishIntervalRef.current){
+  //       window.clearInterval(publishIntervalRef.current);
+  //     }
+  //   }
+  // }, []);
 
   useEffect(() => {
     if (direction) {
