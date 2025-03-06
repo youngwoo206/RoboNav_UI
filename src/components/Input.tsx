@@ -1,131 +1,88 @@
-import { useState, useEffect } from "react";
+import { useEffect, useState } from "react";
+import ROSLIB from "roslib";
 import Key from "./Key";
 import SpeedIndicator from "./SpeedIndicator";
 
-function Input() {
+interface RosIntegrationProps {
+  ros: ROSLIB.Ros | null;
+  connection: boolean;
+}
+
+const Input = ({ ros, connection }: RosIntegrationProps) => {
+  const [keysPressed, setKeysPressed] = useState<Record<string, boolean>>({});
   const [direction, setDirection] = useState<string | null>(null);
-  const [removeDirection, setRemoveDirection] = useState<string | null>(null);
-
-  const [overallSpeed, setOverallSpeed] = useState<number>(0); //temp, pull from ros data
-  const [linearSpeed, setLinearSpeed] = useState<number>(0); //temp, pull from ros data
-  const [angularSpeed, setAngularSpeed] = useState<number>(0); //temp, pull from ros data
-
-  const maxSpeed: number = 4; //temp, pull from ros data
-
-  const handleKeyUp = (event: KeyboardEvent) => {
-    const key = event.key;
-    if (["u", "i", "o", "j", "k", "l", "m", ",", "."].includes(key)) {
-      setRemoveDirection(() => key);
-      setDirection(() => null);
-    } else if (["q", "z", "w", "x", "e", "c"].includes(key)) {
-      const el = document.getElementById(key);
-      el?.classList.remove("text-red-500", "scale-96", "shadow-inner");
+  const [cmdVelPublisher, setCmdVelPublisher] = useState<ROSLIB.Topic | null>(null);
+  const [overallSpeed, setOverallSpeed] = useState<number>(0);
+  const [linearSpeed, setLinearSpeed] = useState<number>(1.0);
+  const [angularSpeed, setAngularSpeed] = useState<number>(1.0);
+  const maxSpeed: number = 4;
+  useEffect(() => {
+    if (ros && connection) {
+      const publisher = new ROSLIB.Topic({
+        ros,
+        name: "/cmd_vel",
+        messageType: "geometry_msgs/Twist",
+      });
+      setCmdVelPublisher(publisher);
     }
-  };
-
-  const handleKeyDown = (event: KeyboardEvent) => {
-    const key = event.key;
-
-    // Handle direction keys
-    if (["u", "i", "o", "j", "k", "l", "m", ",", "."].includes(key)) {
-      setDirection(() => key);
-    }
-    // Handle overallSpeed (q > increase, z > decrease)
-    else if (["q", "z"].includes(key)) {
-      const el = document.getElementById(key);
-      el?.classList.add("text-red-500", "scale-96", "shadow-inner");
-      if (key === "q") {
-        setOverallSpeed((prev) => {
-          if (prev < maxSpeed) {
-            return prev + 1;
-          }
-          return prev; // No change if maxSpeed is reached
-        });
-      } else if (key === "z") {
-        setOverallSpeed((prev) => {
-          if (prev > 0) {
-            return prev - 1;
-          }
-          return prev; // No change if speed is already 0
-        });
-      }
-    }
-    // Handle linearSpeed (w > increase, x > decrease)
-    else if (["w", "x"].includes(key)) {
-      const el = document.getElementById(key);
-      el?.classList.add("text-red-500", "scale-96", "shadow-inner");
-      if (key === "w") {
-        setLinearSpeed((prev) => {
-          if (prev < maxSpeed) {
-            return prev + 1;
-          }
-          return prev; // No change if maxSpeed is reached
-        });
-      } else if (key === "x") {
-        setLinearSpeed((prev) => {
-          if (prev > 0) {
-            return prev - 1;
-          }
-          return prev; // No change if speed is already 0
-        });
-      }
-    }
-    // Handle angularSpeed (e > increase, c > decrease)
-    else if (["e", "c"].includes(key)) {
-      const el = document.getElementById(key);
-      el?.classList.add("text-red-500", "scale-96", "shadow-inner");
-      if (key === "e") {
-        setAngularSpeed((prev) => {
-          if (prev < maxSpeed) {
-            return prev + 1;
-          }
-          return prev; // No change if maxSpeed is reached
-        });
-      } else if (key === "c") {
-        setAngularSpeed((prev) => {
-          if (prev > 0) {
-            return prev - 1;
-          }
-          return prev; // No change if speed is already 0
-        });
-      }
-    }
-  };
+  }, [ros, connection]);
 
   useEffect(() => {
-    if (direction) {
-      const el = document.getElementById(direction);
-      el?.classList.add("text-red-500", "scale-96", "shadow-inner");
-    }
-  }, [direction]);
+    const handleKeyDown = (event: KeyboardEvent) => {
+      const key = event.key;
+      if (["u", "i", "o", "j", "k", "l", "m", ",", "."].includes(key)) {
+        setKeysPressed((prev) => ({ ...prev, [key]: true }));
+        setDirection(key);
+      }
+    };
 
-  useEffect(() => {
-    if (removeDirection) {
-      const el = document.getElementById(removeDirection);
-      el?.classList.remove("text-red-500", "scale-96", "shadow-inner");
-      setRemoveDirection(() => null);
-    }
-  }, [removeDirection]);
+    const handleKeyUp = (event: KeyboardEvent) => {
+      const key = event.key;
+      if (["u", "i", "o", "j", "k", "l", "m", ",", "."].includes(key)) {
+        setKeysPressed((prev) => ({ ...prev, [key]: false }));
+        setDirection(null);
 
-  useEffect(() => {
+        if (cmdVelPublisher) {
+          const stopMsg = new ROSLIB.Message({
+            linear: { x: 0, y: 0, z: 0 },
+            angular: { x: 0, y: 0, z: 0 },
+          });
+          cmdVelPublisher.publish(stopMsg);
+        }
+      }
+    };
+
     window.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("keyup", handleKeyUp);
+
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
-    };
-  }, []);
-
-  useEffect(() => {
-    window.addEventListener("keyup", handleKeyUp);
-    return () => {
       window.removeEventListener("keyup", handleKeyUp);
     };
-  }, []);
+  }, [cmdVelPublisher]);
 
-  //   useEffect(() => {
-  //     console.log(`Direction: ${direction}`);
-  //   }, [direction, removeDirection]);
-
-  //NOTE: grid-rows-maxSpeed is hardcoded
+  useEffect(() => {
+    if (direction && cmdVelPublisher) {
+      let moveMsg;
+      switch (direction) {
+        case "i": // Forward
+          moveMsg = { linear: { x: 1, y: 0, z: 0 }, angular: { x: 0, y: 0, z: 0 } };
+          break;
+        case "k": // Backward
+          moveMsg = { linear: { x: -1, y: 0, z: 0 }, angular: { x: 0, y: 0, z: 0 } };
+          break;
+        case "j": // Left
+          moveMsg = { linear: { x: 0, y: 0, z: 0 }, angular: { x: 0, y: 0, z: 1 } };
+          break;
+        case "l": // Right
+          moveMsg = { linear: { x: 0, y: 0, z: 0 }, angular: { x: 0, y: 0, z: -1 } };
+          break;
+        default:
+          moveMsg = { linear: { x: 0, y: 0, z: 0 }, angular: { x: 0, y: 0, z: 0 } };
+      }
+      cmdVelPublisher.publish(new ROSLIB.Message(moveMsg));
+    }
+  }, [direction, cmdVelPublisher]);
 
   return (
     <div className="rounded-lg bg-gray-100 w-165 h-80 justify-center p-5">
@@ -158,6 +115,42 @@ function Input() {
       </div>
     </div>
   );
-}
+};
 
 export default Input;
+
+
+//   return (
+//     <div className="rounded-lg bg-gray-100 w-165 h-80 justify-center p-5">
+//       <div className="flex items-center justify-between gap-5">
+//         <div className="w-70 h-60 rounded-lg bg-gray-200 grid grid-cols-3 grid-rows-3 gap-5 p-5 align-middle justify-center">
+//           <Key letter="q" />
+//           <Key letter="w" />
+//           <Key letter="e" />
+//           <SpeedIndicator speed={overallSpeed} maxSpeed={maxSpeed} />
+//           <SpeedIndicator speed={linearSpeed} maxSpeed={maxSpeed} />
+//           <SpeedIndicator speed={angularSpeed} maxSpeed={maxSpeed} />
+//           <Key letter="z" />
+//           <Key letter="x" />
+//           <Key letter="c" />
+//         </div>
+//         <div className="w-70 h-60 rounded-lg bg-gray-200 grid grid-cols-3 grid-rows-3 gap-5 p-5 align-middle justify-center">
+//           <Key letter="u" />
+//           <Key letter="i" />
+//           <Key letter="o" />
+//           <Key letter="j" />
+//           <Key letter="k" />
+//           <Key letter="l" />
+//           <Key letter="m" />
+//           <Key letter="," />
+//           <Key letter="." />
+//         </div>
+//       </div>
+//       <div className="h-10 w-72 bg-red-200 rounded-md px-3 font-semibold mx-auto mt-3 text-center">
+//         Space for E-Stop
+//       </div>
+//     </div>
+//   );
+// }
+
+// export default Input;
