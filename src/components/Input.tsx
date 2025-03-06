@@ -29,6 +29,7 @@ function Input({ ros, connection }: RosIntegrationProps) {
   const [linearSpeed, setLinearSpeed] = useState<number>(1.0);
   const [angularSpeed, setAngularSpeed] = useState<number>(1.0);
   const [keyPressed, setKeyPressed] = useState<Record<string, boolean>>({});
+  const [eStopActive, setEStopActive] = useState<boolean>(false);
   const intervalRef = useRef<number | null>(null);
   const maxSpeed: number = 4;
 
@@ -43,6 +44,47 @@ function Input({ ros, connection }: RosIntegrationProps) {
     messageType: CMD_VEL_TYPE
   }) : null;
 
+  // Send an emergency stop command
+  const sendEStopCommand = () => {
+    if (!ros || !connection || !cmdVelPublisher) {
+      console.error("Cannot send E-Stop command - no ROS connection");
+      return;
+    }
+
+    // Create a zero velocity twist message
+    const stopMsg: TwistMessage = {
+      linear: { x: 0, y: 0, z: 0 },
+      angular: { x: 0, y: 0, z: 0 }
+    };
+
+    // Send multiple stop commands to ensure they are received
+    cmdVelPublisher.publish(new ROSLIB.Message(stopMsg));
+    
+    // Send additional stop commands with slight delays for redundancy
+    setTimeout(() => {
+      if (cmdVelPublisher) cmdVelPublisher.publish(new ROSLIB.Message(stopMsg));
+    }, 50);
+    
+    setTimeout(() => {
+      if (cmdVelPublisher) cmdVelPublisher.publish(new ROSLIB.Message(stopMsg));
+    }, 100);
+    
+    console.log("E-STOP command sent");
+  };
+
+  // Toggle E-Stop state
+  const toggleEStop = () => {
+    const newEStopState = !eStopActive;
+    setEStopActive(newEStopState);
+    
+    if (newEStopState) {
+      // Activating E-Stop
+      setDirection(null);
+      sendEStopCommand();
+    }
+    // When deactivating, don't need to do anything special - just allow commands again
+  }; 
+
   // Publish velocity commands to ROS
   const publishVelocityCommand = () => {
     if (!ros || !connection || !cmdVelPublisher) {
@@ -51,6 +93,10 @@ function Input({ ros, connection }: RosIntegrationProps) {
         connection,
         publisher: !!cmdVelPublisher
       });
+      return;
+    }
+
+    if (eStopActive){
       return;
     }
 
@@ -147,6 +193,10 @@ function Input({ ros, connection }: RosIntegrationProps) {
       intervalRef.current = null;
     }
 
+    if (eStopActive){
+      return;
+    }
+
     // If there's a direction, start publishing
     if (direction) {
       intervalRef.current = window.setInterval(() => {
@@ -175,10 +225,23 @@ function Input({ ros, connection }: RosIntegrationProps) {
 
   const handleKeyUp = (event: KeyboardEvent) => {
     const key = event.key;
+
+    if (key == " " && eStopActive){
+      setEStopActive(false);
+      return;
+    }
     if (["u", "i", "o", "j", "k", "l", "m", ",", "."].includes(key)) {
       setKeyPressed(prev => ({ ...prev, [key]: false }));
       setRemoveDirection(key);
       setDirection(null); // This will trigger the effect to stop the robot
+
+      if (cmdVelPublisher && !eStopActive){
+        const stopMsg: TwistMessage = {
+          linear: {x: 0, y: 0 , z: 0 },
+          angular: {x: 0, y: 0, z: 0}
+        };
+        cmdVelPublisher.publish(new ROSLIB.Message(stopMsg));
+      }
     } else if (["q", "z", "w", "x", "e", "c"].includes(key)) {
       const el = document.getElementById(key);
       el?.classList.remove("text-red-500", "scale-96", "shadow-inner");
@@ -187,6 +250,17 @@ function Input({ ros, connection }: RosIntegrationProps) {
 
   const handleKeyDown = (event: KeyboardEvent) => {
     const key = event.key;
+
+    if (key == " "){
+      setEStopActive(true);
+      setDirection(null);
+      sendEStopCommand();
+      return;
+    }
+
+    if (eStopActive){
+      return;
+    }
 
     // Handle direction keys
     if (["u", "i", "o", "j", "k", "l", "m", ",", "."].includes(key)) {
@@ -290,13 +364,10 @@ function Input({ ros, connection }: RosIntegrationProps) {
       </div>
       <div 
         id="e-stop"
-        className="h-10 w-72 bg-red-200 rounded-md px-3 font-semibold mx-auto mt-3 text-center flex items-center justify-center cursor-pointer"
-        onClick={() => {
-          setDirection(null);
-          sendStopCommand();
-        }}
-      >
-        Space for E-Stop
+        className={`h-10 w-72 ${eStopActive ? 'bg-red-500 text-black' : 'bg-green-500 text-white'} rounded-md px-3 font-semibold mx-auto mt-3 text-center flex items-center justify-center cursor-pointer transition-colors- duration-300 ease-in-out border-2 ${eStopActive ? 'border-red-700' : 'border-green-700'}`}
+        onClick={toggleEStop}
+        >
+          {eStopActive ? "E-STOP ACTIVE(RELEASE SPACE TO TURN OFF E-STOP)" : "HOLD SPACE FOR E-STOP"}
       </div>
       {!connection && (
         <div className="absolute inset-0 bg-black bg-opacity-50 flex items-center justify-center rounded-lg">
