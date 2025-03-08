@@ -40,7 +40,8 @@ function App() {
     <div className="flex justify-center ">
       <div className="bg-amber-100 mt-[10vh] grid grid-cols-2 gap-2">
         <Camera connection={connected} ros={ros} />
-        <Lidar />
+        {/* <Lidar /> */}
+        <SLAM connection={true} ros={ros} />
         <Input connection = {connected} ros = {ros}/>
         <Stats connection={connected} ros={ros} />
       </div>

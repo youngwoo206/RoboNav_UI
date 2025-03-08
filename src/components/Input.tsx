@@ -369,11 +369,11 @@ function Input({ ros, connection }: RosIntegrationProps) {
         >
           {eStopActive ? "E-STOP ACTIVE(CLICK TO RELEASE E-STOP)" : "PRESS SPACE FOR E-STOP"}
       </div>
-      {!connection && (
+      {/* {!connection && (
         <div className="absolute inset-0 bg-black bg-opacity-50 flex items-center justify-center rounded-lg">
           <p className="text-white font-bold">ROS Not Connected</p>
         </div>
-      )}
+      )} */}
     </div>
   );
 }
