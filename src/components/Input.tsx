@@ -367,7 +367,7 @@ function Input({ ros, connection }: RosIntegrationProps) {
         className={`h-10 w-72 ${eStopActive ? 'bg-red-500 text-black' : 'bg-green-500 text-white'} rounded-md px-3 font-semibold mx-auto mt-3 text-center flex items-center justify-center cursor-pointer transition-colors- duration-300 ease-in-out border-2 ${eStopActive ? 'border-red-700' : 'border-green-700'}`}
         onClick={toggleEStop}
         >
-          {eStopActive ? "E-STOP ACTIVE(RELEASE SPACE TO TURN OFF E-STOP)" : "HOLD SPACE FOR E-STOP"}
+          {eStopActive ? "E-STOP ACTIVE(CLICK TO RELEASE E-STOP)" : "PRESS SPACE FOR E-STOP"}
       </div>
       {!connection && (
         <div className="absolute inset-0 bg-black bg-opacity-50 flex items-center justify-center rounded-lg">
