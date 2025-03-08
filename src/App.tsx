@@ -1,8 +1,8 @@
 import { useState, useEffect } from "react";
 import Input from "./components/Input";
 import Camera from "./components/Camera";
-import Lidar from "./components/Lidar";
 import Stats from "./components/Stats";
+import SLAM from "./components/SLAM";
 import ROSLIB, { Ros } from "roslib";
 
 function App() {
