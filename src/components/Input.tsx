@@ -337,7 +337,7 @@ function Input({ ros, connection }: RosIntegrationProps) {
 
 
   return (
-    <div className="rounded-lg bg-gray-100 w-165 h-80 justify-center p-5 relative mx-auto">
+    <div className="rounded-lg bg-gray-100 w-[100%] h-80 justify-center p-5 relative mx-auto">
       <div className="flex items-center justify-between gap-5">
         <div className="w-70 h-60 rounded-lg bg-gray-200 grid grid-cols-3 grid-rows-3 gap-5 p-5 align-middle justify-center">
           <Key letter="q" />
@@ -369,11 +369,6 @@ function Input({ ros, connection }: RosIntegrationProps) {
         >
           {eStopActive ? "E-STOP ACTIVE(CLICK TO RELEASE E-STOP)" : "PRESS SPACE FOR E-STOP"}
       </div>
-      {/* {!connection && (
-        <div className="absolute inset-0 bg-black bg-opacity-50 flex items-center justify-center rounded-lg">
-          <p className="text-white font-bold">ROS Not Connected</p>
-        </div>
-      )} */}
     </div>
   );
 }

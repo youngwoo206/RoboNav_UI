@@ -1,8 +1,7 @@
 import { useState, useEffect } from "react";
-import Input from "./components/Input";
 import Camera from "./components/Camera";
-import Stats from "./components/Stats";
 import SLAM from "./components/SLAM";
+import Dashboard from "./components/Dashboard";
 import ROSLIB, { Ros } from "roslib";
 
 function App() {
@@ -41,8 +40,7 @@ function App() {
       <div className="grid grid-cols-2 gap-5 w-[95%] mt-5 justify-center">
         <Camera connection={connected} ros={ros} />
         <SLAM connection={true} ros={ros} />
-        <Input connection = {connected} ros = {ros}/>
-        <Stats connection={connected} ros={ros} />
+        <Dashboard connection={connected} ros={ros} />
       </div>
     </div>
   );
