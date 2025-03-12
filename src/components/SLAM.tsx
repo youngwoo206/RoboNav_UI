@@ -15,8 +15,8 @@ function SLAM({ connection = false, ros = null }: SLAMProps) {
           <p className="text-gray-500">Waiting for ROS connection...</p>
         </div>
       ) : (
-        // <LidarVisualization ros={ros} connection={connection} />
-        <LidarPathVisual ros={ros} connection={connection} />
+        <LidarVisualization ros={ros} connection={connection} />
+        // <LidarPathVisual ros={ros} connection={connection} />
       )}
     </div>
   );

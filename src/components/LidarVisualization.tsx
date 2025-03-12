@@ -13,11 +13,16 @@ function LidarVisualization({ ros, connection }: LidarVisualizationProps) {
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
   const sceneRef = useRef<THREE.Scene | null>(null);
   const pointsRef = useRef<THREE.Points | null>(null);
+  const pathLineRef = useRef<THREE.Line | null>(null); // For path line
+  const robotMarkerRef = useRef<THREE.Mesh | null>(null); // For robot position marker
   const statsRef = useRef<HTMLDivElement | null>(null);
 
-  // const SLAM_TOPIC = "/map";
-  const SLAM_TOPIC = "/husky3/sensors/lidar3d_0/points"
+  const SLAM_TOPIC = "/map";
   const MESSAGE_TYPE = "sensor_msgs/msg/PointCloud2";
+  const PATH_TOPIC = "/path";
+  const PATH_MESSAGE_TYPE = "nav_msgs/Path";
+  const CURRENT_POSITION_TOPIC = "/current_pose";
+  const CURRENT_POSITION_MESSAGE_TYPE = "geometry_msgs/PoseStamped";
 
   // Initialize Three.js scene
   useEffect(() => {
@@ -71,6 +76,33 @@ function LidarVisualization({ ros, connection }: LidarVisualizationProps) {
     const points = new THREE.Points(pointGeometry, pointMaterial);
     scene.add(points);
     pointsRef.current = points;
+
+    // Create empty path line
+    const pathGeometry = new THREE.BufferGeometry();
+    const pathMaterial = new THREE.LineBasicMaterial({
+      color: 0xff0000, // Red path line
+      linewidth: 2,
+    });
+    const pathLine = new THREE.Line(pathGeometry, pathMaterial);
+    scene.add(pathLine);
+    pathLineRef.current = pathLine;
+
+    // Create robot position marker (yellow pin)
+    // Using a cone shape pointing upward to represent the robot
+    const markerGeometry = new THREE.ConeGeometry(0.15, 0.4, 16);
+    const markerMaterial = new THREE.MeshBasicMaterial({
+      color: 0xffff00, // Yellow color
+      transparent: true,
+      opacity: 0.8,
+    });
+    // Rotate the cone to point upward
+    markerGeometry.rotateX(-Math.PI / 2);
+
+    const robotMarker = new THREE.Mesh(markerGeometry, markerMaterial);
+    // Add a small offset to keep the pin visible above the ground plane
+    robotMarker.position.y = 0.2;
+    scene.add(robotMarker);
+    robotMarkerRef.current = robotMarker;
 
     // Stats display
     const stats = document.createElement("div");
@@ -138,6 +170,104 @@ function LidarVisualization({ ros, connection }: LidarVisualizationProps) {
       listener.unsubscribe();
     };
   }, [ros, connection]);
+
+  // ROS subscription for robot path
+  useEffect(() => {
+    if (!ros || !connection || !pathLineRef.current || !sceneRef.current)
+      return;
+
+    const pathListener = new ROSLIB.Topic({
+      ros,
+      name: PATH_TOPIC,
+      messageType: PATH_MESSAGE_TYPE,
+    });
+
+    pathListener.subscribe((message: any) => {
+      console.log("Received path message");
+
+      if (pathLineRef.current) {
+        updateRobotPath(message, pathLineRef.current);
+      }
+    });
+
+    return () => {
+      pathListener.unsubscribe();
+    };
+  }, [ros, connection]);
+
+  // ROS subscription for current robot position
+  useEffect(() => {
+    if (!ros || !connection || !robotMarkerRef.current || !sceneRef.current)
+      return;
+
+    const positionListener = new ROSLIB.Topic({
+      ros,
+      name: CURRENT_POSITION_TOPIC,
+      messageType: CURRENT_POSITION_MESSAGE_TYPE,
+    });
+
+    positionListener.subscribe((message: any) => {
+      console.log("Received current position message");
+
+      if (robotMarkerRef.current) {
+        updateRobotMarker(message, robotMarkerRef.current);
+      }
+    });
+
+    return () => {
+      positionListener.unsubscribe();
+    };
+  }, [ros, connection]);
+
+  // Function to update the robot marker position
+  function updateRobotMarker(poseMsg: any, marker: THREE.Mesh) {
+    const pose = poseMsg.pose;
+
+    // ROS coordinate system to Three.js coordinate system
+    marker.position.x = pose.position.x; // ROS X → Three.js X
+    marker.position.z = -pose.position.y; // ROS Y → Three.js -Z
+    // Keep the y position slightly elevated so the pin is visible
+    marker.position.y = pose.position.z + 0.2; // ROS Z → Three.js Y (up) + small offset
+
+    // Optionally update the orientation based on quaternion
+    // Converting quaternion to Euler angles is complex, so I'm keeping this simple
+    // If you need orientation, we can add it later
+
+    console.log(
+      `Updated robot marker position: (${marker.position.x}, ${marker.position.y}, ${marker.position.z})`
+    );
+  }
+
+  // Function to update the robot path visualization
+  function updateRobotPath(pathMsg: any, pathLine: THREE.Line) {
+    if (!pathMsg.poses || !pathMsg.poses.length) {
+      console.log("Path message has no poses");
+      return;
+    }
+
+    // Extract positions from path message
+    const positions = new Float32Array(pathMsg.poses.length * 3);
+
+    for (let i = 0; i < pathMsg.poses.length; i++) {
+      const pose = pathMsg.poses[i].pose;
+
+      // ROS coordinate system to Three.js coordinate system
+      positions[i * 3] = pose.position.x; // ROS X → Three.js X
+      positions[i * 3 + 1] = pose.position.z; // ROS Z → Three.js Y (up)
+      positions[i * 3 + 2] = -pose.position.y; // ROS Y → Three.js -Z
+    }
+
+    // Create new geometry for the path line
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+    geometry.computeBoundingSphere();
+
+    // Replace old geometry with new one
+    pathLine.geometry.dispose(); // Properly dispose the old geometry
+    pathLine.geometry = geometry;
+
+    console.log(`Updated path with ${pathMsg.poses.length} points`);
+  }
 
   // Function to process pointcloud data
   function updatePointCloud(message: any, points: THREE.Points) {
