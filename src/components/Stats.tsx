@@ -50,7 +50,7 @@ function Stats({ connection, ros }: StatsProps) {
   };
 
   return (
-    <div className="rounded-lg bg-gray-100 w-165 h-80 p-5">
+    <div className="rounded-lg bg-gray-100 w-165 h-80 p-5 mx-auto">
       <div className="h-10 rounded-lg bg-gray-200 flex items-center px-5">
         <p className="font-semibold ">{"Connection Status:"}</p>
         {connection ? (

@@ -8,7 +8,7 @@ interface SLAMProps {
 
 function SLAM({ connection = false, ros = null }: SLAMProps) {
   return (
-    <div className="rounded-lg bg-gray-100 w-165 h-80">
+    <div className="rounded-lg bg-gray-100 w-[100%] aspect-video">
       {!connection ? (
         <div className="flex items-center justify-center h-full">
           <p className="text-gray-500">Waiting for ROS connection...</p>

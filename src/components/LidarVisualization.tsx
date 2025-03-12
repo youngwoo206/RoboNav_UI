@@ -15,7 +15,8 @@ function LidarVisualization({ ros, connection }: LidarVisualizationProps) {
   const pointsRef = useRef<THREE.Points | null>(null);
   const statsRef = useRef<HTMLDivElement | null>(null);
 
-  const SLAM_TOPIC = "/map";
+  // const SLAM_TOPIC = "/map";
+  const SLAM_TOPIC = "/husky3/sensors/lidar3d_0/points"
   const MESSAGE_TYPE = "sensor_msgs/msg/PointCloud2";
 
   // Initialize Three.js scene

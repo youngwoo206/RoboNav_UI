@@ -337,7 +337,7 @@ function Input({ ros, connection }: RosIntegrationProps) {
 
 
   return (
-    <div className="rounded-lg bg-gray-100 w-165 h-80 justify-center p-5 relative">
+    <div className="rounded-lg bg-gray-100 w-165 h-80 justify-center p-5 relative mx-auto">
       <div className="flex items-center justify-between gap-5">
         <div className="w-70 h-60 rounded-lg bg-gray-200 grid grid-cols-3 grid-rows-3 gap-5 p-5 align-middle justify-center">
           <Key letter="q" />

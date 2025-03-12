@@ -38,9 +38,8 @@ function App() {
 
   return (
     <div className="flex justify-center ">
-      <div className="bg-amber-100 mt-[10vh] grid grid-cols-2 gap-2">
+      <div className="grid grid-cols-2 gap-5 w-[95%] mt-5 justify-center">
         <Camera connection={connected} ros={ros} />
-        {/* <Lidar /> */}
         <SLAM connection={true} ros={ros} />
         <Input connection = {connected} ros = {ros}/>
         <Stats connection={connected} ros={ros} />
