@@ -36,7 +36,7 @@ function App() {
   }, []);
 
   return (
-    <div className="flex justify-center ">
+    <div className="flex justify-center">
       <div className="grid grid-cols-2 gap-5 w-[95%] mt-5 justify-center">
         <Camera connection={connected} ros={ros} />
         <SLAM connection={true} ros={ros} />
