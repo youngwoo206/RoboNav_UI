@@ -37,12 +37,12 @@ function Camera({ connection, ros }: CameraProps) {
   }, [ros, connection]);
 
   return (
-    <div className="rounded-lg bg-gray-100 w-165 h-80">
+    <div className="bg-gray-300 w-[100%]">
       {imageSrc ? (
         <img
           src={imageSrc}
           alt="Robot Camera Feed"
-          className="rounded-lg shadow-md w-full"
+          className="shadow-md w-[100%]"
         />
       ) : (
         <p className="text-gray-500">Waiting for camera feed...</p>
