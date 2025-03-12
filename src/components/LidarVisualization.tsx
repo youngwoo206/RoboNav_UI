@@ -96,7 +96,7 @@ function LidarVisualization({ ros, connection }: LidarVisualizationProps) {
       opacity: 0.8,
     });
     // Rotate the cone to point upward
-    markerGeometry.rotateX(-Math.PI / 2);
+    markerGeometry.rotateX(-Math.PI);
 
     const robotMarker = new THREE.Mesh(markerGeometry, markerMaterial);
     // Add a small offset to keep the pin visible above the ground plane
