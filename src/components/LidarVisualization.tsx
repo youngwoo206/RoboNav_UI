@@ -17,7 +17,7 @@ function LidarVisualization({ ros, connection }: LidarVisualizationProps) {
   const robotMarkerRef = useRef<THREE.Mesh | null>(null); // For robot position marker
   const statsRef = useRef<HTMLDivElement | null>(null);
 
-  const SLAM_TOPIC = "/map";
+  const SLAM_TOPIC = "/husky3/sensors/lidar3d_0/points";
   const MESSAGE_TYPE = "sensor_msgs/msg/PointCloud2";
   const PATH_TOPIC = "/path";
   const PATH_MESSAGE_TYPE = "nav_msgs/Path";
