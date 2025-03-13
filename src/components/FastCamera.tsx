@@ -6,8 +6,9 @@ interface CameraProps {
   ros: Ros | null;
 }
 
-function FastCamera({ connection, ros }: CameraProps) {
+function Camera({ connection, ros }: CameraProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const imageRef = useRef<HTMLImageElement>(new Image());
   const [isConnected, setIsConnected] = useState(false);
   const frameProcessorRef = useRef<{
     lastTimestamp: number;
@@ -19,7 +20,7 @@ function FastCamera({ connection, ros }: CameraProps) {
     frameCount: 0,
   });
 
-  const CAMERA_TOPIC = "/husky3/camera_0/color/image_raw/compressed"; // Ensure this topic exists
+  const CAMERA_TOPIC = "/husky3/camera_0/color/image_raw/compressed";
   const MESSAGE_TYPE = "sensor_msgs/msg/CompressedImage";
 
   useEffect(() => {
@@ -32,14 +33,17 @@ function FastCamera({ connection, ros }: CameraProps) {
     const canvas = canvasRef.current;
     if (!canvas) return;
 
-    const ctx = canvas.getContext("2d", { alpha: false, desynchronized: true });
+    const ctx = canvas.getContext("2d", { alpha: false });
     if (!ctx) return;
+
+    // Pre-create image element for reuse
+    const img = imageRef.current;
 
     // Track connection state
     setIsConnected(true);
 
     // Set up message processing
-    const processFrame = async (imageData: Uint8Array, format: string) => {
+    const processFrame = (imageData: Uint8Array, format: string) => {
       try {
         // Track FPS
         const now = performance.now();
@@ -52,31 +56,39 @@ function FastCamera({ connection, ros }: CameraProps) {
           processor.lastTimestamp = now;
         }
 
-        // Create blob directly from Uint8Array
-        const blob = new Blob([imageData], { type: `image/${format}` });
+        // Convert binary data to base64 (this works in the original code)
+        // Use the same conversion method that was working before
+        const base64 = btoa(
+          Array.from(imageData)
+            .map((byte) => String.fromCharCode(byte))
+            .join("")
+        );
 
-        // Use createImageBitmap for faster decoding (hardware accelerated when available)
-        const bitmap = await createImageBitmap(blob);
+        // Create data URL
+        const dataUrl = `data:image/${format};base64,${base64}`;
 
-        // Ensure canvas is sized correctly, but only update dimensions when needed
-        if (canvas.width !== bitmap.width || canvas.height !== bitmap.height) {
-          canvas.width = bitmap.width;
-          canvas.height = bitmap.height;
-        }
+        // Use the image element to decode
+        img.onload = () => {
+          // Set canvas size to match image if needed
+          if (canvas.width !== img.width || canvas.height !== img.height) {
+            canvas.width = img.width;
+            canvas.height = img.height;
+          }
 
-        // Clear and draw new frame
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        ctx.drawImage(bitmap, 0, 0);
+          // Draw the image to canvas
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+          ctx.drawImage(img, 0, 0);
 
-        // Display FPS in corner
-        ctx.fillStyle = "rgba(0, 0, 0, 0.5)";
-        ctx.fillRect(5, 5, 60, 20);
-        ctx.fillStyle = "#ffffff";
-        ctx.font = "12px Arial";
-        ctx.fillText(`FPS: ${processor.fps}`, 10, 20);
+          // Display FPS in corner
+          ctx.fillStyle = "rgba(0, 0, 0, 0.5)";
+          ctx.fillRect(5, 5, 60, 20);
+          ctx.fillStyle = "#ffffff";
+          ctx.font = "12px Arial";
+          ctx.fillText(`FPS: ${processor.fps}`, 10, 20);
+        };
 
-        // Release bitmap to free memory
-        bitmap.close();
+        // Set src to trigger loading
+        img.src = dataUrl;
       } catch (error) {
         console.error("Error processing video frame:", error);
       }
@@ -93,7 +105,6 @@ function FastCamera({ connection, ros }: CameraProps) {
       // Use requestAnimationFrame to sync with browser refresh rate
       requestAnimationFrame(() => {
         const compressedImage = message as { format: string; data: Uint8Array };
-        // Process the frame directly without React state updates
         processFrame(compressedImage.data, compressedImage.format || "jpeg");
       });
     });
@@ -119,4 +130,4 @@ function FastCamera({ connection, ros }: CameraProps) {
   );
 }
 
-export default FastCamera;
+export default Camera;
