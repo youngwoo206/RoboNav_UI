@@ -81,7 +81,7 @@ function FastLidarVisualization({ ros, connection }: LidarVisualizationProps) {
     const renderer = new THREE.WebGLRenderer({
       canvas: canvasRef.current,
       antialias: true,
-      powerPreference: "low-power", // high-performance : Prefer GPU performance
+      powerPreference: "high-performance", // high-performance : Prefer GPU performance
       precision: "mediump", // Use medium precision for better performance
     });
     renderer.setSize(
@@ -412,87 +412,153 @@ function FastLidarVisualization({ ros, connection }: LidarVisualizationProps) {
     }
   }
 
-  // Function to update the robot path visualization with time-based filtering
   function updateRobotPath(pathMsg: any, pathLine: THREE.Line) {
     if (!pathMsg.poses || !pathMsg.poses.length) return;
 
-    // Only use path points that were created after the component mounted
-    // This is the key fix for preventing old path data from showing up on restart
-
-    // Get the message timestamp if available (ROS2 header stamp)
-    const now = Date.now();
-    let newPointsCount = 0;
+    // Get reference to stored path vertices
     const pathVertices = bufferRef.current.pathVertices;
+    let addedNewPoint = false;
 
-    // Extract only new positions from path message
-    for (let i = 0; i < pathMsg.poses.length; i++) {
-      // Check if this pose has a header with timestamp
-      const pose = pathMsg.poses[i];
-      const poseTime =
-        pose.header && pose.header.stamp
-          ? pose.header.stamp.sec * 1000 + pose.header.stamp.nanosec / 1000000
-          : now;
+    // Get the latest position from the message
+    const latestPose = pathMsg.poses[pathMsg.poses.length - 1];
+    const latestPosition = latestPose.pose.position;
 
-      // Skip old path points from before the component mounted
-      if (poseTime < connectionTimeRef.current) continue;
+    // Convert to THREE.Vector3
+    const latestVertex = new THREE.Vector3(
+      latestPosition.x,
+      latestPosition.z,
+      -latestPosition.y
+    );
 
-      // Convert position to THREE.Vector3
-      const position = pose.pose.position;
-      const vertex = new THREE.Vector3(
-        position.x, // ROS X → Three.js X
-        position.z, // ROS Z → Three.js Y (up)
-        -position.y // ROS Y → Three.js -Z
-      );
+    // If this is the first point or significantly different from the last point
+    if (pathVertices.length === 0) {
+      // First point - just add it
+      pathVertices.push(latestVertex);
+      addedNewPoint = true;
+    }
+    // Otherwise add it if it's different enough from the last point
+    else if (
+      latestVertex.distanceTo(pathVertices[pathVertices.length - 1]) > 0.02
+    ) {
+      pathVertices.push(latestVertex);
+      addedNewPoint = true;
+    }
 
-      // Check if this is a new point (avoid duplicates)
-      if (
-        pathVertices.length === 0 ||
-        vertex.distanceTo(pathVertices[pathVertices.length - 1]) > 0.02
-      ) {
-        pathVertices.push(vertex);
-        newPointsCount++;
+    // Only update the geometry if we've added a new point
+    if (addedNewPoint && pathVertices.length > 0) {
+      // Create a new geometry using all stored vertices for continuous path
+      const positions = new Float32Array(pathVertices.length * 3);
+
+      for (let i = 0; i < pathVertices.length; i++) {
+        positions[i * 3] = pathVertices[i].x;
+        positions[i * 3 + 1] = pathVertices[i].y;
+        positions[i * 3 + 2] = pathVertices[i].z;
       }
-    }
 
-    // If no new points, no need to update geometry
-    if (newPointsCount === 0) return;
+      // Create a new geometry with our continuous path
+      const geometry = new THREE.BufferGeometry();
+      geometry.setAttribute(
+        "position",
+        new THREE.BufferAttribute(positions, 3)
+      );
+      geometry.computeBoundingSphere();
 
-    // Use path simplification for better performance
-    // Only use a subset of points based on path length
-    const totalVertices = pathVertices.length;
-    let stride = 1;
+      // Replace old geometry
+      pathLine.geometry.dispose();
+      pathLine.geometry = geometry;
 
-    // Reduce number of path points for very large paths
-    if (totalVertices > 1000) stride = Math.floor(totalVertices / 500);
-
-    const simplifiedCount = Math.ceil(totalVertices / stride);
-    const positions = new Float32Array(simplifiedCount * 3);
-
-    for (let i = 0, j = 0; i < totalVertices; i += stride, j++) {
-      const vertex = pathVertices[i];
-      positions[j * 3] = vertex.x;
-      positions[j * 3 + 1] = vertex.y;
-      positions[j * 3 + 2] = vertex.z;
-    }
-
-    // Create new geometry for the path line
-    const geometry = new THREE.BufferGeometry();
-    geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
-    geometry.computeBoundingSphere();
-
-    // Replace old geometry with new one
-    pathLine.geometry.dispose();
-    pathLine.geometry = geometry;
-
-    // Update stats if many points were simplified
-    if (stride > 1 && statsRef.current) {
-      let statsText = statsRef.current.textContent || "";
-      if (!statsText.includes("Path")) {
-        statsRef.current.textContent =
-          statsText + ` | Path: ${simplifiedCount}/${totalVertices} pts`;
+      // Update stats if desired
+      if (statsRef.current && pathVertices.length > 0) {
+        let statsText = statsRef.current.textContent || "";
+        if (!statsText.includes("Path")) {
+          statsRef.current.textContent =
+            statsText + ` | Path: ${pathVertices.length} pts`;
+        }
       }
     }
   }
+
+  // Function to update the robot path visualization with time-based filtering
+  //   function updateRobotPath(pathMsg: any, pathLine: THREE.Line) {
+  //     if (!pathMsg.poses || !pathMsg.poses.length) return;
+
+  //     // Only use path points that were created after the component mounted
+  //     // This is the key fix for preventing old path data from showing up on restart
+
+  //     // Get the message timestamp if available (ROS2 header stamp)
+  //     const now = Date.now();
+  //     let newPointsCount = 0;
+  //     const pathVertices = bufferRef.current.pathVertices;
+
+  //     // Extract only new positions from path message
+  //     for (let i = 0; i < pathMsg.poses.length; i++) {
+  //       // Check if this pose has a header with timestamp
+  //       const pose = pathMsg.poses[i];
+  //       const poseTime =
+  //         pose.header && pose.header.stamp
+  //           ? pose.header.stamp.sec * 1000 + pose.header.stamp.nanosec / 1000000
+  //           : now;
+
+  //       // Skip old path points from before the component mounted
+  //       if (poseTime < connectionTimeRef.current) continue;
+
+  //       // Convert position to THREE.Vector3
+  //       const position = pose.pose.position;
+  //       const vertex = new THREE.Vector3(
+  //         position.x, // ROS X → Three.js X
+  //         position.z, // ROS Z → Three.js Y (up)
+  //         -position.y // ROS Y → Three.js -Z
+  //       );
+
+  //       // Check if this is a new point (avoid duplicates)
+  //       if (
+  //         pathVertices.length === 0 ||
+  //         vertex.distanceTo(pathVertices[pathVertices.length - 1]) > 0.02
+  //       ) {
+  //         pathVertices.push(vertex);
+  //         newPointsCount++;
+  //       }
+  //     }
+
+  //     // If no new points, no need to update geometry
+  //     if (newPointsCount === 0) return;
+
+  //     // Use path simplification for better performance
+  //     // Only use a subset of points based on path length
+  //     const totalVertices = pathVertices.length;
+  //     let stride = 1;
+
+  //     // Reduce number of path points for very large paths
+  //     if (totalVertices > 1000) stride = Math.floor(totalVertices / 500);
+
+  //     const simplifiedCount = Math.ceil(totalVertices / stride);
+  //     const positions = new Float32Array(simplifiedCount * 3);
+
+  //     for (let i = 0, j = 0; i < totalVertices; i += stride, j++) {
+  //       const vertex = pathVertices[i];
+  //       positions[j * 3] = vertex.x;
+  //       positions[j * 3 + 1] = vertex.y;
+  //       positions[j * 3 + 2] = vertex.z;
+  //     }
+
+  //     // Create new geometry for the path line
+  //     const geometry = new THREE.BufferGeometry();
+  //     geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+  //     geometry.computeBoundingSphere();
+
+  //     // Replace old geometry with new one
+  //     pathLine.geometry.dispose();
+  //     pathLine.geometry = geometry;
+
+  //     // Update stats if many points were simplified
+  //     if (stride > 1 && statsRef.current) {
+  //       let statsText = statsRef.current.textContent || "";
+  //       if (!statsText.includes("Path")) {
+  //         statsRef.current.textContent =
+  //           statsText + ` | Path: ${simplifiedCount}/${totalVertices} pts`;
+  //       }
+  //     }
+  //   }
 
   // Clear path data
   const clearPath = () => {
