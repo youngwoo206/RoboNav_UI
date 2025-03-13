@@ -5,7 +5,6 @@ import react from '@vitejs/plugin-react'
 import tsConfigPaths from 'vite-tsconfig-paths'
 import tailwindcss from '@tailwindcss/vite'
 
-// https://vitejs.dev/config/
 export default defineConfig({
   plugins: [
     react(),
@@ -36,6 +35,8 @@ export default defineConfig({
     }
   },
   optimizeDeps: {
-    include: ['three']
-  }
+    include: ['three'],
+    exclude: ['onnxruntime-web'],
+  },
+  assetsInclude: ['**/*.wasm']  
 })

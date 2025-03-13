@@ -13,6 +13,12 @@ interface Detection {
   confidence: number;
 }
 
+//@ts-expect-error
+ort.env.wasm.wasmPaths = {
+  "ort-wasm.wasm": "/wasm/ort-wasm.wasm",
+  "ort-wasm-threaded.wasm": "/wasm/ort-wasm-threaded.wasm",
+};
+
 function Camera({ connection, ros }: CameraProps) {
   const [imageSrc, setImageSrc] = useState<string | null>(null);
   const [detections, setDetections] = useState<Detection[]>([]);
@@ -41,7 +47,7 @@ function Camera({ connection, ros }: CameraProps) {
         };
 
         // Load your trained model (you'll need to host this file)
-        const modelUrl = "../utilities/best.onnx";
+        const modelUrl = "/model/best.onnx";
         const inferenceSession = await ort.InferenceSession.create(
           modelUrl,
           options
