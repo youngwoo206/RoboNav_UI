@@ -20,6 +20,9 @@ function Camera({ connection, ros }: CameraProps) {
   const [modelLoaded, setModelLoaded] = useState<boolean>(false);
   const [session, setSession] = useState<ort.InferenceSession | null>(null);
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
+  const [frameCount, setFrameCount] = useState(0);
+
+  const FRAME_SKIP = 2; // Process every 3rd frame
 
   const CAMERA_TOPIC = "/husky3/camera_0/color/image_raw/compressed";
   const MESSAGE_TYPE = "sensor_msgs/msg/CompressedImage";
@@ -38,7 +41,7 @@ function Camera({ connection, ros }: CameraProps) {
         };
 
         // Load your trained model (you'll need to host this file)
-        const modelUrl = "/models/yolov10-brick-detection.onnx";
+        const modelUrl = "../utilities/best.onnx";
         const inferenceSession = await ort.InferenceSession.create(
           modelUrl,
           options
@@ -105,7 +108,13 @@ function Camera({ connection, ros }: CameraProps) {
       }
     };
 
-    processImage();
+    setFrameCount((prev) => {
+      const newCount = prev + 1;
+      if (newCount % FRAME_SKIP !== 0) return newCount;
+
+      processImage();
+      return newCount;
+    });
   }, [imageSrc, modelLoaded, session, isProcessing]);
 
   // Helper function to run detection
