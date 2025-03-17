@@ -10,17 +10,22 @@ interface CameraProps {
 function DefectDetection({ connection, ros }: CameraProps) {
   const [imageSrc, setImageSrc] = useState<string | null>(null);
   const [modelLoaded, setModelLoaded] = useState<boolean>(false);
+  // New state to track detected faces and timestamps
+  const [detectedFaces, setDetectedFaces] = useState<number[][]>([]);
+  const [lastDetectionTime, setLastDetectionTime] = useState<number>(0);
+
   const sessionRef = useRef<ort.InferenceSession | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const lastInferenceTimeRef = useRef<number>(0); //for throttling
+  const lastInferenceTimeRef = useRef<number>(0);
   const imageRef = useRef<HTMLImageElement | null>(null);
   const overlayCanvasRef = useRef<HTMLCanvasElement | null>(null);
 
   const CAMERA_TOPIC = "/husky3/camera_0/color/image_raw/compressed";
   const MESSAGE_TYPE = "sensor_msgs/msg/CompressedImage";
   const MODEL_PATH = "./model/faces.onnx";
-  const THROTTLE_INTERVAL = 5000;
-  const THRESHOLD = 0.7; //70% confidence
+  const THROTTLE_INTERVAL = 1000;
+  const THRESHOLD = 0.7; // 70% confidence
+  const FACE_PERSISTENCE_TIMEOUT = 1500; // Time in ms to keep faces displayed after detection
 
   // Load the ONNX model
   useEffect(() => {
@@ -54,8 +59,10 @@ function DefectDetection({ connection, ros }: CameraProps) {
 
     const now = Date.now();
 
-    //throttling
+    // throttling
     if (now - lastInferenceTimeRef.current < THROTTLE_INTERVAL) {
+      // Check if we need to clear faces due to timeout
+      checkFaceTimeout();
       return;
     }
 
@@ -90,24 +97,19 @@ function DefectDetection({ connection, ros }: CameraProps) {
       // Create a Float32Array for the tensor
       const tensor = new Float32Array(1 * 3 * height * width);
 
-      // Preprocess:
-      // 1. BGR to RGB conversion (since original is BGR8)
-      // 2. Normalize with mean [127,127,127] and scale by 1/128
-      // 3. Transpose from HWC to CHW format with batch dimension
+      // Preprocess image data
       for (let y = 0; y < height; y++) {
         for (let x = 0; x < width; x++) {
           const pixelOffset = (y * width + x) * 4; // RGBA
 
-          // Canvas gives us RGB, but we need to treat it as BGR because
-          // the original format is BGR8, matching the Python cv2.COLOR_BGR2RGB conversion
-          const b = (data[pixelOffset] - 127) / 128; // R channel in canvas is B in original
-          const g = (data[pixelOffset + 1] - 127) / 128; // G remains G
-          const r = (data[pixelOffset + 2] - 127) / 128; // B channel in canvas is R in original
+          const b = (data[pixelOffset] - 127) / 128;
+          const g = (data[pixelOffset + 1] - 127) / 128;
+          const r = (data[pixelOffset + 2] - 127) / 128;
 
-          // Map to CHW format (matching the Python np.transpose([2, 0, 1]))
-          tensor[0 * height * width + y * width + x] = r; // R channel first
-          tensor[height * width + y * width + x] = g; // G channel second
-          tensor[2 * height * width + y * width + x] = b; // B channel third
+          // Map to CHW format
+          tensor[0 * height * width + y * width + x] = r;
+          tensor[height * width + y * width + x] = g;
+          tensor[2 * height * width + y * width + x] = b;
         }
       }
 
@@ -121,7 +123,7 @@ function DefectDetection({ connection, ros }: CameraProps) {
       const feeds = { [inputName]: inputTensor };
       const results = await sessionRef.current.run(feeds);
 
-      //boxes
+      // Process boxes
       const boxesData = new Float32Array(results.boxes.data);
       const boxesReshaped: number[][] = [];
       for (let i = 0; i < boxesData.length; i += 4) {
@@ -133,22 +135,60 @@ function DefectDetection({ connection, ros }: CameraProps) {
         ]);
       }
 
-      //scores
+      // Process scores
       const scoresData = new Float32Array(results.scores.data);
       const confidenceBoxes: number[] = [];
       for (let i = 0; i < scoresData.length / 2; i++) {
-        // Each box has a corresponding score at index i*2+1 (assuming class 1 is face)
         if (scoresData[i * 2 + 1] > THRESHOLD) {
           confidenceBoxes.push(i);
         }
       }
 
-      //draw boxes
+      // Update state if faces were detected
+      if (confidenceBoxes.length > 0) {
+        // Extract the actual face boxes that passed confidence threshold
+        const faceBoxes = confidenceBoxes.map((idx) => boxesReshaped[idx]);
+
+        // Store confidence scores with boxes for display
+        const facesWithScores = faceBoxes.map((box, i) => {
+          const boxIdx = confidenceBoxes[i];
+          const confidence = scoresData[boxIdx * 2 + 1];
+          return [...box, confidence]; // [x1, y1, x2, y2, confidence]
+        });
+
+        setDetectedFaces(facesWithScores);
+        setLastDetectionTime(Date.now());
+      } else {
+        // Check if we should clear faces due to timeout
+        checkFaceTimeout();
+      }
+
+      // Always draw faces - either new detections or persisted ones
       drawFaces(scoresData, boxesReshaped, confidenceBoxes);
     } catch (error) {
       console.error("Inference error:", error);
     }
   }
+
+  // Check if we should clear faces due to timeout
+  function checkFaceTimeout() {
+    const now = Date.now();
+    if (
+      detectedFaces.length > 0 &&
+      now - lastDetectionTime > FACE_PERSISTENCE_TIMEOUT
+    ) {
+      setDetectedFaces([]); // Clear faces after timeout
+    }
+  }
+
+  // Set up timer to regularly check for face timeout
+  useEffect(() => {
+    const timer = setInterval(() => {
+      checkFaceTimeout();
+    }, 500); // Check every 500ms
+
+    return () => clearInterval(timer);
+  }, [lastDetectionTime, detectedFaces]);
 
   useEffect(() => {
     if (ros && connection) {
@@ -172,7 +212,6 @@ function DefectDetection({ connection, ros }: CameraProps) {
           );
 
           // Handle the ROS-specific format string with metadata
-          // The format is typically "jpeg compressed bgr8" or similar
           let format = compressedImage.format;
 
           // Default to jpeg if format is unclear
@@ -203,14 +242,121 @@ function DefectDetection({ connection, ros }: CameraProps) {
       // Make the overlay canvas match the displayed image dimensions
       overlayCanvasRef.current.width = imageRef.current.clientWidth;
       overlayCanvasRef.current.height = imageRef.current.clientHeight;
+
+      // Redraw faces if there are any
+      if (detectedFaces.length > 0) {
+        drawPersistentFaces();
+      }
     }
   };
 
+  // Draw faces that are persistent in state
+  function drawPersistentFaces() {
+    if (
+      !overlayCanvasRef.current ||
+      !imageRef.current ||
+      detectedFaces.length === 0
+    )
+      return;
+
+    const canvas = overlayCanvasRef.current;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    // Clear previous drawings
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    // Original image dimensions from preprocessing
+    const origWidth = 320;
+    const origHeight = 240;
+
+    // Display dimensions
+    const displayWidth = canvas.width;
+    const displayHeight = canvas.height;
+
+    // Scale factors
+    const scaleX = displayWidth / origWidth;
+    const scaleY = displayHeight / origHeight;
+
+    // Setup drawing style
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = "rgba(255, 100, 0, 0.8)";
+    ctx.fillStyle = "rgba(255, 100, 0, 0.3)";
+
+    // Draw each persistent face
+    for (let i = 0; i < detectedFaces.length; i++) {
+      const box = detectedFaces[i];
+      const [x1, y1, x2, y2, confidence = 0.7] = box; // Default confidence if not stored
+
+      // Convert normalized coordinates to pixel coordinates
+      const imgX1 = x1 * origWidth;
+      const imgY1 = y1 * origHeight;
+      const imgX2 = x2 * origWidth;
+      const imgY2 = y2 * origHeight;
+
+      // Make the box square (similar to scale() in Python)
+      const width = imgX2 - imgX1;
+      const height = imgY2 - imgY1;
+      const maximum = Math.max(width, height);
+      const dx = (maximum - width) / 2;
+      const dy = (maximum - height) / 2;
+
+      const squareBox = [imgX1 - dx, imgY1 - dy, imgX2 + dx, imgY2 + dy];
+
+      // Scale to display dimensions
+      const displayX1 = squareBox[0] * scaleX;
+      const displayY1 = squareBox[1] * scaleY;
+      const displayWidth = (squareBox[2] - squareBox[0]) * scaleX;
+      const displayHeight = (squareBox[3] - squareBox[1]) * scaleY;
+
+      // Draw bounding box
+      ctx.beginPath();
+      ctx.rect(displayX1, displayY1, displayWidth, displayHeight);
+      ctx.fill();
+      ctx.stroke();
+
+      // Add confidence score text
+      ctx.fillStyle = "white";
+      ctx.font = "16px Arial";
+      ctx.fillText(
+        `${(confidence * 100).toFixed(1)}%`,
+        displayX1 + 5,
+        displayY1 + 20
+      );
+      ctx.fillStyle = "rgba(255, 100, 0, 0.3)";
+    }
+
+    // Add count of faces
+    const timeSinceLastDetection = Date.now() - lastDetectionTime;
+    const timeRemaining = Math.max(
+      0,
+      FACE_PERSISTENCE_TIMEOUT - timeSinceLastDetection
+    );
+
+    ctx.fillStyle = "rgba(0, 0, 0, 0.6)";
+    ctx.fillRect(10, 10, 240, 30);
+    ctx.fillStyle = "white";
+    ctx.font = "bold 16px Arial";
+    ctx.fillText(
+      `Faces: ${detectedFaces.length} (${Math.round(timeRemaining / 1000)}s)`,
+      20,
+      30
+    );
+  }
+
+  // Modified draw faces function to use persistent state
   function drawFaces(
     scoresData,
     boxesReshaped: number[][],
     confidenceBoxes: number[]
   ) {
+    // If we have faces in our state, draw those instead
+    if (detectedFaces.length > 0) {
+      drawPersistentFaces();
+      return;
+    }
+
+    // Otherwise fall back to drawing only current detections
     if (!overlayCanvasRef.current || !imageRef.current) return;
 
     const canvas = overlayCanvasRef.current;
@@ -242,7 +388,7 @@ function DefectDetection({ connection, ros }: CameraProps) {
 
     // Draw each detected face
     for (const boxIdx of confidenceBoxes) {
-      // Get the box coordinates - these are likely normalized [0-1]
+      // Get the box coordinates
       const box = boxesReshaped[boxIdx];
       const [x1, y1, x2, y2] = box;
 
@@ -252,7 +398,7 @@ function DefectDetection({ connection, ros }: CameraProps) {
       const imgX2 = x2 * origWidth;
       const imgY2 = y2 * origHeight;
 
-      // Make the box square (similar to scale() in Python)
+      // Make the box square
       const width = imgX2 - imgX1;
       const height = imgY2 - imgY1;
       const maximum = Math.max(width, height);
@@ -294,6 +440,13 @@ function DefectDetection({ connection, ros }: CameraProps) {
     ctx.font = "bold 16px Arial";
     ctx.fillText(`Faces detected: ${confidenceBoxes.length}`, 20, 30);
   }
+
+  // Effect to ensure boxes are redrawn when state changes
+  useEffect(() => {
+    if (detectedFaces.length > 0) {
+      drawPersistentFaces();
+    }
+  }, [detectedFaces, lastDetectionTime]);
 
   return (
     <div className="bg-gray-300 w-[100%] relative">
