@@ -7,12 +7,20 @@ interface CameraProps {
   ros: Ros | null;
 }
 
+// Define a tracked face interface with unique ID
+interface TrackedFace {
+  id: number;
+  box: number[]; // [x1, y1, x2, y2, confidence]
+  lastSeen: number; // timestamp
+}
+
 function DefectDetection({ connection, ros }: CameraProps) {
   const [imageSrc, setImageSrc] = useState<string | null>(null);
   const [modelLoaded, setModelLoaded] = useState<boolean>(false);
-  // New state to track detected faces and timestamps
-  const [detectedFaces, setDetectedFaces] = useState<number[][]>([]);
+  // Changed to use TrackedFace interface with IDs
+  const [trackedFaces, setTrackedFaces] = useState<TrackedFace[]>([]);
   const [lastDetectionTime, setLastDetectionTime] = useState<number>(0);
+  const [nextId, setNextId] = useState<number>(1); // For generating unique face IDs
 
   const sessionRef = useRef<ort.InferenceSession | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -23,9 +31,10 @@ function DefectDetection({ connection, ros }: CameraProps) {
   const CAMERA_TOPIC = "/husky3/camera_0/color/image_raw/compressed";
   const MESSAGE_TYPE = "sensor_msgs/msg/CompressedImage";
   const MODEL_PATH = "./model/faces.onnx";
-  const THROTTLE_INTERVAL = 1000;
+  const THROTTLE_INTERVAL = 500;
   const THRESHOLD = 0.7; // 70% confidence
   const FACE_PERSISTENCE_TIMEOUT = 1500; // Time in ms to keep faces displayed after detection
+  const IOU_THRESHOLD = 0.3; // Minimum IoU to consider the same face
 
   // Load the ONNX model
   useEffect(() => {
@@ -50,6 +59,34 @@ function DefectDetection({ connection, ros }: CameraProps) {
 
     loadModel();
   }, []);
+
+  // Calculate IoU between two boxes
+  function calculateIoU(boxA: number[], boxB: number[]): number {
+    // Get coordinates (first 4 values are x1,y1,x2,y2)
+    const [x1A, y1A, x2A, y2A] = boxA;
+    const [x1B, y1B, x2B, y2B] = boxB;
+
+    // Calculate intersection area
+    const xLeft = Math.max(x1A, x1B);
+    const yTop = Math.max(y1A, y1B);
+    const xRight = Math.min(x2A, x2B);
+    const yBottom = Math.min(y2A, y2B);
+
+    if (xRight < xLeft || yBottom < yTop) {
+      return 0; // No intersection
+    }
+
+    const intersectionArea = (xRight - xLeft) * (yBottom - yTop);
+
+    // Calculate areas of both boxes
+    const boxAArea = (x2A - x1A) * (y2A - y1A);
+    const boxBArea = (x2B - x1B) * (y2B - y1B);
+
+    // Calculate IoU
+    const unionArea = boxAArea + boxBArea - intersectionArea;
+
+    return intersectionArea / unionArea;
+  }
 
   // Preprocess image and run inference
   async function runInference(imageUrl: string) {
@@ -144,40 +181,90 @@ function DefectDetection({ connection, ros }: CameraProps) {
         }
       }
 
-      // Update state if faces were detected
+      // Match and update faces based on IoU
       if (confidenceBoxes.length > 0) {
-        // Extract the actual face boxes that passed confidence threshold
-        const faceBoxes = confidenceBoxes.map((idx) => boxesReshaped[idx]);
-
-        // Store confidence scores with boxes for display
-        const facesWithScores = faceBoxes.map((box, i) => {
-          const boxIdx = confidenceBoxes[i];
-          const confidence = scoresData[boxIdx * 2 + 1];
+        // Extract the actual face boxes with confidence scores
+        const newDetections = confidenceBoxes.map((idx) => {
+          const box = boxesReshaped[idx];
+          const confidence = scoresData[idx * 2 + 1];
           return [...box, confidence]; // [x1, y1, x2, y2, confidence]
         });
 
-        setDetectedFaces(facesWithScores);
-        setLastDetectionTime(Date.now());
+        // Update tracked faces using IoU
+        updateTrackedFaces(newDetections);
       } else {
         // Check if we should clear faces due to timeout
         checkFaceTimeout();
       }
 
-      // Always draw faces - either new detections or persisted ones
-      drawFaces(scoresData, boxesReshaped, confidenceBoxes);
+      // Always draw tracked faces
+      drawTrackedFaces();
     } catch (error) {
       console.error("Inference error:", error);
     }
   }
 
+  // Update tracked faces using IoU matching
+  function updateTrackedFaces(newDetections: number[][]) {
+    const currentTime = Date.now();
+    let updatedFaces = [...trackedFaces];
+    const matchedIndices = new Set<number>();
+    let idCounter = nextId;
+
+    // For each new detection, check if it matches an existing face
+    for (const newBox of newDetections) {
+      let matched = false;
+      let bestMatchIndex = -1;
+      let bestIoU = IOU_THRESHOLD;
+
+      // Compare with each existing face
+      for (let i = 0; i < updatedFaces.length; i++) {
+        if (matchedIndices.has(i)) continue; // Skip already matched faces
+
+        const iou = calculateIoU(newBox, updatedFaces[i].box);
+        if (iou > bestIoU) {
+          bestIoU = iou;
+          bestMatchIndex = i;
+          matched = true;
+        }
+      }
+
+      if (matched) {
+        // Update existing face location and timestamp
+        updatedFaces[bestMatchIndex].box = newBox;
+        updatedFaces[bestMatchIndex].lastSeen = currentTime;
+        matchedIndices.add(bestMatchIndex);
+      } else {
+        // Add as new face
+        updatedFaces.push({
+          id: idCounter++,
+          box: newBox,
+          lastSeen: currentTime,
+        });
+      }
+    }
+
+    // Update the next ID counter
+    setNextId(idCounter);
+
+    // Update the face state
+    setTrackedFaces(updatedFaces);
+    setLastDetectionTime(currentTime);
+  }
+
   // Check if we should clear faces due to timeout
   function checkFaceTimeout() {
     const now = Date.now();
-    if (
-      detectedFaces.length > 0 &&
-      now - lastDetectionTime > FACE_PERSISTENCE_TIMEOUT
-    ) {
-      setDetectedFaces([]); // Clear faces after timeout
+    if (trackedFaces.length > 0) {
+      // Remove faces that haven't been seen recently
+      const updatedFaces = trackedFaces.filter(
+        (face) => now - face.lastSeen <= FACE_PERSISTENCE_TIMEOUT
+      );
+
+      // Only update state if faces were actually removed
+      if (updatedFaces.length < trackedFaces.length) {
+        setTrackedFaces(updatedFaces);
+      }
     }
   }
 
@@ -188,7 +275,7 @@ function DefectDetection({ connection, ros }: CameraProps) {
     }, 500); // Check every 500ms
 
     return () => clearInterval(timer);
-  }, [lastDetectionTime, detectedFaces]);
+  }, [trackedFaces]);
 
   useEffect(() => {
     if (ros && connection) {
@@ -244,20 +331,15 @@ function DefectDetection({ connection, ros }: CameraProps) {
       overlayCanvasRef.current.height = imageRef.current.clientHeight;
 
       // Redraw faces if there are any
-      if (detectedFaces.length > 0) {
-        drawPersistentFaces();
+      if (trackedFaces.length > 0) {
+        drawTrackedFaces();
       }
     }
   };
 
-  // Draw faces that are persistent in state
-  function drawPersistentFaces() {
-    if (
-      !overlayCanvasRef.current ||
-      !imageRef.current ||
-      detectedFaces.length === 0
-    )
-      return;
+  // Draw tracked faces
+  function drawTrackedFaces() {
+    if (!overlayCanvasRef.current || !imageRef.current) return;
 
     const canvas = overlayCanvasRef.current;
     const ctx = canvas.getContext("2d");
@@ -265,6 +347,8 @@ function DefectDetection({ connection, ros }: CameraProps) {
 
     // Clear previous drawings
     ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    if (trackedFaces.length === 0) return;
 
     // Original image dimensions from preprocessing
     const origWidth = 320;
@@ -278,15 +362,13 @@ function DefectDetection({ connection, ros }: CameraProps) {
     const scaleX = displayWidth / origWidth;
     const scaleY = displayHeight / origHeight;
 
-    // Setup drawing style
+    // Setup drawing style - RED border with TRANSPARENT fill
     ctx.lineWidth = 3;
-    ctx.strokeStyle = "rgba(255, 100, 0, 0.8)";
-    ctx.fillStyle = "rgba(255, 100, 0, 0.3)";
+    ctx.strokeStyle = "rgba(255, 0, 0, 0.9)"; // Red border
 
-    // Draw each persistent face
-    for (let i = 0; i < detectedFaces.length; i++) {
-      const box = detectedFaces[i];
-      const [x1, y1, x2, y2, confidence = 0.7] = box; // Default confidence if not stored
+    // Draw each tracked face
+    for (const face of trackedFaces) {
+      const [x1, y1, x2, y2, confidence] = face.box;
 
       // Convert normalized coordinates to pixel coordinates
       const imgX1 = x1 * origWidth;
@@ -309,144 +391,35 @@ function DefectDetection({ connection, ros }: CameraProps) {
       const displayWidth = (squareBox[2] - squareBox[0]) * scaleX;
       const displayHeight = (squareBox[3] - squareBox[1]) * scaleY;
 
-      // Draw bounding box
+      // Draw bounding box with transparent fill
       ctx.beginPath();
       ctx.rect(displayX1, displayY1, displayWidth, displayHeight);
-      ctx.fill();
-      ctx.stroke();
+      ctx.stroke(); // Only stroke, no fill
 
-      // Add confidence score text
-      ctx.fillStyle = "white";
-      ctx.font = "16px Arial";
+      // Add label with ID and confidence score
+      ctx.fillStyle = "rgba(255, 0, 0, 0.9)"; // Red text
+      ctx.font = "bold 16px Arial";
       ctx.fillText(
-        `${(confidence * 100).toFixed(1)}%`,
+        `Face #${face.id}: ${(confidence * 100).toFixed(1)}%`,
         displayX1 + 5,
         displayY1 + 20
       );
-      ctx.fillStyle = "rgba(255, 100, 0, 0.3)";
     }
 
     // Add count of faces
-    const timeSinceLastDetection = Date.now() - lastDetectionTime;
-    const timeRemaining = Math.max(
-      0,
-      FACE_PERSISTENCE_TIMEOUT - timeSinceLastDetection
-    );
-
-    ctx.fillStyle = "rgba(0, 0, 0, 0.6)";
+    ctx.fillStyle = "rgba(0, 0, 0, 0.7)";
     ctx.fillRect(10, 10, 240, 30);
     ctx.fillStyle = "white";
     ctx.font = "bold 16px Arial";
-    ctx.fillText(
-      `Faces: ${detectedFaces.length} (${Math.round(timeRemaining / 1000)}s)`,
-      20,
-      30
-    );
-  }
-
-  // Modified draw faces function to use persistent state
-  function drawFaces(
-    scoresData,
-    boxesReshaped: number[][],
-    confidenceBoxes: number[]
-  ) {
-    // If we have faces in our state, draw those instead
-    if (detectedFaces.length > 0) {
-      drawPersistentFaces();
-      return;
-    }
-
-    // Otherwise fall back to drawing only current detections
-    if (!overlayCanvasRef.current || !imageRef.current) return;
-
-    const canvas = overlayCanvasRef.current;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-
-    // Clear previous drawings
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-    // If no faces detected, just return
-    if (confidenceBoxes.length === 0) return;
-
-    // Original image dimensions from preprocessing
-    const origWidth = 320;
-    const origHeight = 240;
-
-    // Display dimensions
-    const displayWidth = canvas.width;
-    const displayHeight = canvas.height;
-
-    // Scale factors
-    const scaleX = displayWidth / origWidth;
-    const scaleY = displayHeight / origHeight;
-
-    // Setup drawing style
-    ctx.lineWidth = 3;
-    ctx.strokeStyle = "rgba(255, 100, 0, 0.8)";
-    ctx.fillStyle = "rgba(255, 100, 0, 0.3)";
-
-    // Draw each detected face
-    for (const boxIdx of confidenceBoxes) {
-      // Get the box coordinates
-      const box = boxesReshaped[boxIdx];
-      const [x1, y1, x2, y2] = box;
-
-      // Convert normalized coordinates to pixel coordinates
-      const imgX1 = x1 * origWidth;
-      const imgY1 = y1 * origHeight;
-      const imgX2 = x2 * origWidth;
-      const imgY2 = y2 * origHeight;
-
-      // Make the box square
-      const width = imgX2 - imgX1;
-      const height = imgY2 - imgY1;
-      const maximum = Math.max(width, height);
-      const dx = (maximum - width) / 2;
-      const dy = (maximum - height) / 2;
-
-      const squareBox = [imgX1 - dx, imgY1 - dy, imgX2 + dx, imgY2 + dy];
-
-      // Scale to display dimensions
-      const displayX1 = squareBox[0] * scaleX;
-      const displayY1 = squareBox[1] * scaleY;
-      const displayWidth = (squareBox[2] - squareBox[0]) * scaleX;
-      const displayHeight = (squareBox[3] - squareBox[1]) * scaleY;
-
-      // Draw bounding box
-      ctx.beginPath();
-      ctx.rect(displayX1, displayY1, displayWidth, displayHeight);
-      ctx.fill();
-      ctx.stroke();
-
-      // Add confidence score text if available
-      if (boxIdx * 2 + 1 < scoresData.length) {
-        const confidence = scoresData[boxIdx * 2 + 1];
-        ctx.fillStyle = "white";
-        ctx.font = "16px Arial";
-        ctx.fillText(
-          `${(confidence * 100).toFixed(1)}%`,
-          displayX1 + 5,
-          displayY1 + 20
-        );
-        ctx.fillStyle = "rgba(255, 100, 0, 0.3)";
-      }
-    }
-
-    // Add count of faces
-    ctx.fillStyle = "rgba(0, 0, 0, 0.6)";
-    ctx.fillRect(10, 10, 200, 30);
-    ctx.fillStyle = "white";
-    ctx.font = "bold 16px Arial";
-    ctx.fillText(`Faces detected: ${confidenceBoxes.length}`, 20, 30);
+    ctx.fillText(`Faces tracked: ${trackedFaces.length}`, 20, 30);
   }
 
   // Effect to ensure boxes are redrawn when state changes
   useEffect(() => {
-    if (detectedFaces.length > 0) {
-      drawPersistentFaces();
+    if (trackedFaces.length > 0) {
+      drawTrackedFaces();
     }
-  }, [detectedFaces, lastDetectionTime]);
+  }, [trackedFaces]);
 
   return (
     <div className="bg-gray-300 w-[100%] relative">
