@@ -12,7 +12,6 @@ function MultithreadedLidarVisualization({
   ros,
   connection,
 }: LidarVisualizationProps) {
-  // Refs for DOM elements and THREE.js objects
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
   const sceneRef = useRef<THREE.Scene | null>(null);
@@ -25,7 +24,6 @@ function MultithreadedLidarVisualization({
   const animationFrameRef = useRef<number | null>(null);
   const workerRef = useRef<Worker | null>(null);
 
-  // Performance tracking refs
   const fpsCounterRef = useRef<{
     count: number;
     lastTime: number;
@@ -38,14 +36,12 @@ function MultithreadedLidarVisualization({
   const renderTimeRef = useRef<number>(0);
   const lastMessageTimeRef = useRef<number>(0);
 
-  // UI State (changes trigger re-renders)
   const [decimationFactor, setDecimationFactor] = useState<number>(2);
   const [qualityLevel, setQualityLevel] = useState<string>("medium");
   const [showPath, setShowPath] = useState<boolean>(true);
   const [isVisible, setIsVisible] = useState<boolean>(true);
 
-  // Constants for optimization
-  const MAX_PATH_POINTS = 5000;
+  const MAX_PATH_POINTS = 500;
   const MIN_UPDATE_INTERVAL = 100; // ms between point cloud updates
   const MIN_PATH_UPDATE_INTERVAL = 200; // ms between path updates
 
