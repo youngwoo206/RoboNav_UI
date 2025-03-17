@@ -12,22 +12,24 @@ function DefectDetection({ connection, ros }: CameraProps) {
   const [modelLoaded, setModelLoaded] = useState<boolean>(false);
   const sessionRef = useRef<ort.InferenceSession | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const lastInferenceTimeRef = useRef<number>(0)  //for throttling
+  const lastInferenceTimeRef = useRef<number>(0); //for throttling
+  const imageRef = useRef<HTMLImageElement | null>(null);
+  const overlayCanvasRef = useRef<HTMLCanvasElement | null>(null);
 
   const CAMERA_TOPIC = "/husky3/camera_0/color/image_raw/compressed";
   const MESSAGE_TYPE = "sensor_msgs/msg/CompressedImage";
   const MODEL_PATH = "./model/faces.onnx";
-  const THROTTLE_INTERVAL = 5000
-  const THRESHOLD = 0.7   //70% confidence
+  const THROTTLE_INTERVAL = 5000;
+  const THRESHOLD = 0.7; //70% confidence
 
   // Load the ONNX model
   useEffect(() => {
     async function loadModel() {
       try {
         // Create inference session
-        console.log("LOADING ONNX")
+        console.log("LOADING ONNX");
         const session = await ort.InferenceSession.create(MODEL_PATH, {
-          executionProviders: ["webgl", 'wasm'],
+          executionProviders: ["webgl", "wasm"],
           graphOptimizationLevel: "all",
         });
 
@@ -50,11 +52,11 @@ function DefectDetection({ connection, ros }: CameraProps) {
       return;
     }
 
-    const now = Date.now()
+    const now = Date.now();
 
     //throttling
     if (now - lastInferenceTimeRef.current < THROTTLE_INTERVAL) {
-      return
+      return;
     }
 
     lastInferenceTimeRef.current = now;
@@ -120,28 +122,29 @@ function DefectDetection({ connection, ros }: CameraProps) {
       const results = await sessionRef.current.run(feeds);
 
       //boxes
-      const boxesData = new Float32Array(results.boxes.data)
-      const boxesReshaped: number[][] = []
-
+      const boxesData = new Float32Array(results.boxes.data);
+      const boxesReshaped: number[][] = [];
       for (let i = 0; i < boxesData.length; i += 4) {
         boxesReshaped.push([
           boxesData[i],
-          boxesData[i+1],
-          boxesData[i+2],
-          boxesData[i+3]
-        ])
+          boxesData[i + 1],
+          boxesData[i + 2],
+          boxesData[i + 3],
+        ]);
       }
 
       //scores
-      const scoresData = new Float32Array(results.scores.data)
-      const confidenceIndices: number[] = []
-
-      for (let i=0; i < scoresData.length; i +=2) {
-        if(scoresData[i+1] > THRESHOLD) {
-          confidenceIndices.push(i+1)
+      const scoresData = new Float32Array(results.scores.data);
+      const confidenceBoxes: number[] = [];
+      for (let i = 0; i < scoresData.length / 2; i++) {
+        // Each box has a corresponding score at index i*2+1 (assuming class 1 is face)
+        if (scoresData[i * 2 + 1] > THRESHOLD) {
+          confidenceBoxes.push(i);
         }
       }
 
+      //draw boxes
+      drawFaces(scoresData, boxesReshaped, confidenceBoxes);
     } catch (error) {
       console.error("Inference error:", error);
     }
@@ -195,14 +198,119 @@ function DefectDetection({ connection, ros }: CameraProps) {
     }
   }, [ros, connection, modelLoaded]);
 
+  const handleImageLoad = () => {
+    if (imageRef.current && overlayCanvasRef.current) {
+      // Make the overlay canvas match the displayed image dimensions
+      overlayCanvasRef.current.width = imageRef.current.clientWidth;
+      overlayCanvasRef.current.height = imageRef.current.clientHeight;
+    }
+  };
+
+  function drawFaces(
+    scoresData,
+    boxesReshaped: number[][],
+    confidenceBoxes: number[]
+  ) {
+    if (!overlayCanvasRef.current || !imageRef.current) return;
+
+    const canvas = overlayCanvasRef.current;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    // Clear previous drawings
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    // If no faces detected, just return
+    if (confidenceBoxes.length === 0) return;
+
+    // Original image dimensions from preprocessing
+    const origWidth = 320;
+    const origHeight = 240;
+
+    // Display dimensions
+    const displayWidth = canvas.width;
+    const displayHeight = canvas.height;
+
+    // Scale factors
+    const scaleX = displayWidth / origWidth;
+    const scaleY = displayHeight / origHeight;
+
+    // Setup drawing style
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = "rgba(255, 100, 0, 0.8)";
+    ctx.fillStyle = "rgba(255, 100, 0, 0.3)";
+
+    // Draw each detected face
+    for (const boxIdx of confidenceBoxes) {
+      // Get the box coordinates - these are likely normalized [0-1]
+      const box = boxesReshaped[boxIdx];
+      const [x1, y1, x2, y2] = box;
+
+      // Convert normalized coordinates to pixel coordinates
+      const imgX1 = x1 * origWidth;
+      const imgY1 = y1 * origHeight;
+      const imgX2 = x2 * origWidth;
+      const imgY2 = y2 * origHeight;
+
+      // Make the box square (similar to scale() in Python)
+      const width = imgX2 - imgX1;
+      const height = imgY2 - imgY1;
+      const maximum = Math.max(width, height);
+      const dx = (maximum - width) / 2;
+      const dy = (maximum - height) / 2;
+
+      const squareBox = [imgX1 - dx, imgY1 - dy, imgX2 + dx, imgY2 + dy];
+
+      // Scale to display dimensions
+      const displayX1 = squareBox[0] * scaleX;
+      const displayY1 = squareBox[1] * scaleY;
+      const displayWidth = (squareBox[2] - squareBox[0]) * scaleX;
+      const displayHeight = (squareBox[3] - squareBox[1]) * scaleY;
+
+      // Draw bounding box
+      ctx.beginPath();
+      ctx.rect(displayX1, displayY1, displayWidth, displayHeight);
+      ctx.fill();
+      ctx.stroke();
+
+      // Add confidence score text if available
+      if (boxIdx * 2 + 1 < scoresData.length) {
+        const confidence = scoresData[boxIdx * 2 + 1];
+        ctx.fillStyle = "white";
+        ctx.font = "16px Arial";
+        ctx.fillText(
+          `${(confidence * 100).toFixed(1)}%`,
+          displayX1 + 5,
+          displayY1 + 20
+        );
+        ctx.fillStyle = "rgba(255, 100, 0, 0.3)";
+      }
+    }
+
+    // Add count of faces
+    ctx.fillStyle = "rgba(0, 0, 0, 0.6)";
+    ctx.fillRect(10, 10, 200, 30);
+    ctx.fillStyle = "white";
+    ctx.font = "bold 16px Arial";
+    ctx.fillText(`Faces detected: ${confidenceBoxes.length}`, 20, 30);
+  }
+
   return (
-    <div className="bg-gray-300 w-[100%]">
+    <div className="bg-gray-300 w-[100%] relative">
       {imageSrc ? (
         <>
           <img
+            ref={imageRef}
             src={imageSrc}
             alt="Robot Camera Feed"
             className="shadow-md w-[100%]"
+            onLoad={handleImageLoad}
+          />
+          {/* Overlay canvas for drawing bounding boxes */}
+          <canvas
+            ref={overlayCanvasRef}
+            className="absolute top-0 left-0 w-[100%] h-[100%]"
+            style={{ pointerEvents: "none" }}
           />
           {/* Hidden canvas for image processing */}
           <canvas ref={canvasRef} style={{ display: "none" }} />
