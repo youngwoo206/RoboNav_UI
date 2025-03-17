@@ -12,18 +12,22 @@ function DefectDetection({ connection, ros }: CameraProps) {
   const [modelLoaded, setModelLoaded] = useState<boolean>(false);
   const sessionRef = useRef<ort.InferenceSession | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const lastInferenceTimeRef = useRef<number>(0)  //for throttling
 
   const CAMERA_TOPIC = "/husky3/camera_0/color/image_raw/compressed";
   const MESSAGE_TYPE = "sensor_msgs/msg/CompressedImage";
   const MODEL_PATH = "./model/faces.onnx";
+  const THROTTLE_INTERVAL = 5000
+  const THRESHOLD = 0.7   //70% confidence
 
   // Load the ONNX model
   useEffect(() => {
     async function loadModel() {
       try {
         // Create inference session
+        console.log("LOADING ONNX")
         const session = await ort.InferenceSession.create(MODEL_PATH, {
-          executionProviders: ["webgl"],
+          executionProviders: ["webgl", 'wasm'],
           graphOptimizationLevel: "all",
         });
 
@@ -45,6 +49,15 @@ function DefectDetection({ connection, ros }: CameraProps) {
     if (!sessionRef.current || !canvasRef.current) {
       return;
     }
+
+    const now = Date.now()
+
+    //throttling
+    if (now - lastInferenceTimeRef.current < THROTTLE_INTERVAL) {
+      return
+    }
+
+    lastInferenceTimeRef.current = now;
 
     try {
       // Get input name from session
@@ -106,8 +119,29 @@ function DefectDetection({ connection, ros }: CameraProps) {
       const feeds = { [inputName]: inputTensor };
       const results = await sessionRef.current.run(feeds);
 
-      // Log detection results to console
-      console.log("Face detection results:", results);
+      //boxes
+      const boxesData = new Float32Array(results.boxes.data)
+      const boxesReshaped: number[][] = []
+
+      for (let i = 0; i < boxesData.length; i += 4) {
+        boxesReshaped.push([
+          boxesData[i],
+          boxesData[i+1],
+          boxesData[i+2],
+          boxesData[i+3]
+        ])
+      }
+
+      //scores
+      const scoresData = new Float32Array(results.scores.data)
+      const confidenceIndices: number[] = []
+
+      for (let i=0; i < scoresData.length; i +=2) {
+        if(scoresData[i+1] > THRESHOLD) {
+          confidenceIndices.push(i+1)
+        }
+      }
+
     } catch (error) {
       console.error("Inference error:", error);
     }
