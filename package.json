@@ -17,6 +17,7 @@
     "buffer": "^6.0.3",
     "iohook": "^0.9.3",
     "node-global-key-listener": "^0.3.0",
+    "onnxruntime-web": "^1.21.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "roslib": "^1.4.1",
