@@ -8,7 +8,10 @@ interface LidarVisualizationProps {
   connection: boolean;
 }
 
-function FastLidarVisualization({ ros, connection }: LidarVisualizationProps) {
+function MultithreadedLidarVisualization({
+  ros,
+  connection,
+}: LidarVisualizationProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
   const sceneRef = useRef<THREE.Scene | null>(null);
@@ -20,6 +23,7 @@ function FastLidarVisualization({ ros, connection }: LidarVisualizationProps) {
   const controlsRef = useRef<OrbitControls | null>(null);
   const animationFrameRef = useRef<number | null>(null);
   const connectionTimeRef = useRef<number>(Date.now());
+  const workerRef = useRef<Worker | null>(null);
 
   // Performance optimization settings
   const [decimationFactor, setDecimationFactor] = useState<number>(2); // Only process every nth point
@@ -30,10 +34,12 @@ function FastLidarVisualization({ ros, connection }: LidarVisualizationProps) {
   const [fps, setFps] = useState<number>(0);
   const [isVisible, setIsVisible] = useState<boolean>(true);
 
+  // Constants for optimization
+  const MAX_PATH_POINTS = 5000; // Maximum number of path points to store
+
   // Topic definitions - moved to useMemo to prevent recreating on each render
   const topics = useMemo(
     () => ({
-      //   SLAM_TOPIC: "/husky3/sensors/lidar3d_0/points",
       SLAM_TOPIC: "/map",
       MESSAGE_TYPE: "sensor_msgs/msg/PointCloud2",
       PATH_TOPIC: "/path",
@@ -44,22 +50,22 @@ function FastLidarVisualization({ ros, connection }: LidarVisualizationProps) {
     []
   );
 
-  // Buffer management for better memory efficiency
-  const bufferRef = useRef({
-    positions: new Float32Array(500000 * 3), // Pre-allocate buffer for 500K points
-    colors: new Float32Array(500000 * 3),
-    pathVertices: [] as THREE.Vector3[], // Store path vertices for filtering
+  // Path buffer optimization: pre-allocate a fixed-size buffer
+  const pathBufferRef = useRef({
+    positions: new Float32Array(MAX_PATH_POINTS * 3),
+    attribute: null as THREE.BufferAttribute | null,
+    currentLength: 0,
   });
 
-  // Initialize Three.js scene with performance optimizations
+  // Initialize Three.js scene
   useEffect(() => {
     if (!canvasRef.current) return;
+
     // Every time the component mounts, record the current time
-    // This will be used to filter out old path data
     connectionTimeRef.current = Date.now();
 
-    // Reset path vertices
-    bufferRef.current.pathVertices = [];
+    // Reset path data
+    pathBufferRef.current.currentLength = 0;
 
     // Create scene
     const scene = new THREE.Scene();
@@ -81,14 +87,14 @@ function FastLidarVisualization({ ros, connection }: LidarVisualizationProps) {
     const renderer = new THREE.WebGLRenderer({
       canvas: canvasRef.current,
       antialias: true,
-      powerPreference: "high-performance", // high-performance : Prefer GPU performance
-      precision: "mediump", // Use medium precision for better performance
+      powerPreference: "high-performance",
+      precision: "mediump",
     });
     renderer.setSize(
       canvasRef.current.clientWidth,
       canvasRef.current.clientHeight
     );
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)); // Cap pixel ratio at 2 for better performance
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     rendererRef.current = renderer;
 
     // Controls
@@ -101,22 +107,17 @@ function FastLidarVisualization({ ros, connection }: LidarVisualizationProps) {
     if (qualityLevel === "high") {
       scene.add(new THREE.AxesHelper(1));
       scene.add(new THREE.GridHelper(10, 10, 0x888888, 0x444444));
-    } else {
-      // Simpler grid for medium quality
-      if (qualityLevel === "medium") {
-        scene.add(new THREE.GridHelper(10, 5, 0x888888, 0x444444));
-      }
+    } else if (qualityLevel === "medium") {
+      scene.add(new THREE.GridHelper(10, 5, 0x888888, 0x444444));
     }
 
     // Basic lighting
     scene.add(new THREE.AmbientLight(0xffffff, 0.7));
-
-    // Only add directional light in high quality mode
     if (qualityLevel === "high") {
       scene.add(new THREE.DirectionalLight(0xffffff, 0.3));
     }
 
-    // Create optimized point cloud with adaptive point size
+    // Create point cloud
     const pointGeometry = new THREE.BufferGeometry();
     const pointMaterial = new THREE.PointsMaterial({
       size: 0.03,
@@ -127,25 +128,35 @@ function FastLidarVisualization({ ros, connection }: LidarVisualizationProps) {
     scene.add(points);
     pointsRef.current = points;
 
-    // Create path line with reduced complexity
+    // Create path line with pre-allocated buffer
     const pathGeometry = new THREE.BufferGeometry();
+    const pathPositions = pathBufferRef.current.positions;
+    const pathAttribute = new THREE.BufferAttribute(pathPositions, 3);
+
+    pathGeometry.setAttribute("position", pathAttribute);
+    pathGeometry.setDrawRange(0, 0); // Initially no points to draw
+
     const pathMaterial = new THREE.LineBasicMaterial({
       color: 0xff0000,
       linewidth: 2,
     });
+
     const pathLine = new THREE.Line(pathGeometry, pathMaterial);
-    pathLine.visible = showPath; // Control path visibility
+    pathLine.visible = showPath;
     scene.add(pathLine);
     pathLineRef.current = pathLine;
 
+    // Store attribute reference for updates
+    pathBufferRef.current.attribute = pathAttribute;
+
     // Create robot marker
-    const markerGeometry = new THREE.ConeGeometry(0.15, 0.4, 8); // Reduced segments
+    const markerGeometry = new THREE.ConeGeometry(0.15, 0.4, 8);
     const markerMaterial = new THREE.MeshBasicMaterial({
       color: 0xffff00,
       transparent: true,
       opacity: 0.8,
     });
-    markerGeometry.rotateX(-Math.PI);
+    markerGeometry.rotateX(-Math.PI); // Rotate cone to point upward
     const robotMarker = new THREE.Mesh(markerGeometry, markerMaterial);
     robotMarker.position.y = 0.2;
     scene.add(robotMarker);
@@ -185,7 +196,7 @@ function FastLidarVisualization({ ros, connection }: LidarVisualizationProps) {
 
     window.addEventListener("resize", handleResize);
 
-    // Adaptive frame rate using requestAnimationFrame
+    // Animation loop
     let lastFrameTime = 0;
     const targetFPS = 30; // Target 30 FPS for smoother performance
     const frameInterval = 1000 / targetFPS;
@@ -233,7 +244,7 @@ function FastLidarVisualization({ ros, connection }: LidarVisualizationProps) {
 
     animationFrameRef.current = requestAnimationFrame(animate);
 
-    // Visibility change detection to save resources when tab is not visible
+    // Visibility change detection
     const handleVisibilityChange = () => {
       setIsVisible(!document.hidden);
     };
@@ -271,17 +282,68 @@ function FastLidarVisualization({ ros, connection }: LidarVisualizationProps) {
       if (rendererRef.current) {
         rendererRef.current.dispose();
       }
+
+      // Terminate worker if it exists
+      if (workerRef.current) {
+        workerRef.current.terminate();
+      }
     };
   }, [qualityLevel]);
 
-  // ROS subscription for pointcloud with throttling
+  // Initialize Web Worker
+  useEffect(() => {
+    // Create the worker
+    const worker = new Worker(
+      new URL("../utilities/pointCloudWorker.ts", import.meta.url)
+    );
+    workerRef.current = worker;
+
+    // Set up message handler
+    worker.onmessage = (e) => {
+      const { positions, colors, validPoints, totalPoints } = e.data;
+
+      // Update the point cloud geometry
+      if (pointsRef.current) {
+        const geometry = new THREE.BufferGeometry();
+        geometry.setAttribute(
+          "position",
+          new THREE.Float32BufferAttribute(positions, 3)
+        );
+        geometry.setAttribute(
+          "color",
+          new THREE.Float32BufferAttribute(colors, 3)
+        );
+        geometry.computeBoundingSphere();
+
+        // Replace old geometry
+        pointsRef.current.geometry.dispose();
+        pointsRef.current.geometry = geometry;
+
+        // Update stats
+        if (statsRef.current) {
+          const decPercent = (100 - (validPoints / totalPoints) * 100).toFixed(
+            1
+          );
+          statsRef.current.textContent = `Points: ${validPoints.toLocaleString()}/${totalPoints.toLocaleString()} (${decPercent}% reduction)`;
+        }
+      }
+    };
+
+    return () => {
+      worker.terminate();
+      workerRef.current = null;
+    };
+  }, []);
+
+  // ROS subscription for pointcloud data
   useEffect(() => {
     if (
       !ros ||
       !connection ||
       !pointsRef.current ||
       !sceneRef.current ||
-      !isVisible
+      !isVisible ||
+      !workerRef.current
     )
       return;
 
@@ -300,17 +362,21 @@ function FastLidarVisualization({ ros, connection }: LidarVisualizationProps) {
       if (now - lastPointCloudUpdate < MIN_UPDATE_INTERVAL) return;
       lastPointCloudUpdate = now;
 
-      if (pointsRef.current) {
-        updatePointCloud(message, pointsRef.current);
+      // Send message to web worker for processing
+      if (workerRef.current) {
+        workerRef.current.postMessage({
+          message: message,
+          decimationFactor: decimationFactor,
+        });
       }
     });
 
     return () => {
       listener.unsubscribe();
     };
-  }, [ros, connection, isVisible, topics]);
+  }, [ros, connection, isVisible, topics, decimationFactor]);
 
-  // ROS subscription for robot path with throttling
+  // ROS subscription for robot path - with optimized path handling
   useEffect(() => {
     if (
       !ros ||
@@ -323,7 +389,7 @@ function FastLidarVisualization({ ros, connection }: LidarVisualizationProps) {
 
     // Throttle variable to limit update frequency
     let lastPathUpdate = 0;
-    const MIN_PATH_UPDATE_INTERVAL = 200; // ms, less frequent updates for path
+    const MIN_PATH_UPDATE_INTERVAL = 200; // ms
 
     const pathListener = new ROSLIB.Topic({
       ros,
@@ -337,7 +403,7 @@ function FastLidarVisualization({ ros, connection }: LidarVisualizationProps) {
       lastPathUpdate = now;
 
       if (pathLineRef.current) {
-        updateRobotPath(message, pathLineRef.current);
+        updateRobotPath(message);
       }
     });
 
@@ -346,7 +412,7 @@ function FastLidarVisualization({ ros, connection }: LidarVisualizationProps) {
     };
   }, [ros, connection, isVisible, topics]);
 
-  // ROS subscription for current robot position with throttling
+  // ROS subscription for current robot position
   useEffect(() => {
     if (
       !ros ||
@@ -357,9 +423,8 @@ function FastLidarVisualization({ ros, connection }: LidarVisualizationProps) {
     )
       return;
 
-    // Robot position updates can be more frequent
     let lastPositionUpdate = 0;
-    const MIN_POSITION_UPDATE_INTERVAL = 200; // ms, more frequent updates for position
+    const MIN_POSITION_UPDATE_INTERVAL = 200; // ms
 
     const positionListener = new ROSLIB.Topic({
       ros,
@@ -389,16 +454,14 @@ function FastLidarVisualization({ ros, connection }: LidarVisualizationProps) {
     }
   }, [showPath]);
 
-  // Function to update the robot marker position (optimized)
+  // Function to update the robot marker position
   function updateRobotMarker(poseMsg: any, marker: THREE.Mesh) {
     const pose = poseMsg.pose;
 
-    // Only update when there's a significant change
     const newX = pose.position.x;
     const newY = pose.position.z + 0.2;
     const newZ = -pose.position.y;
 
-    // Avoid unnecessary updates if position hasn't changed much
     const currentPos = marker.position;
     const distChange = Math.sqrt(
       Math.pow(newX - currentPos.x, 2) +
@@ -412,83 +475,96 @@ function FastLidarVisualization({ ros, connection }: LidarVisualizationProps) {
     }
   }
 
-  function updateRobotPath(pathMsg: any, pathLine: THREE.Line) {
-    if (!pathMsg.poses || !pathMsg.poses.length) return;
+  // OPTIMIZED: Function to update robot path using pre-allocated buffer
+  function updateRobotPath(pathMsg: any) {
+    if (!pathMsg.poses || !pathMsg.poses.length || !pathLineRef.current) return;
 
-    // Get reference to stored path vertices
-    const pathVertices = bufferRef.current.pathVertices;
-    let addedNewPoint = false;
+    const { positions, attribute, currentLength } = pathBufferRef.current;
 
-    // Get the latest position from the message
+    // Get latest position
     const latestPose = pathMsg.poses[pathMsg.poses.length - 1];
     const latestPosition = latestPose.pose.position;
 
-    // Convert to THREE.Vector3
-    const latestVertex = new THREE.Vector3(
-      latestPosition.x,
-      latestPosition.z,
-      -latestPosition.y
-    );
+    // Convert to THREE.js coordinates
+    const x = latestPosition.x;
+    const y = latestPosition.z; // ROS Z → Three.js Y
+    const z = -latestPosition.y; // ROS Y → Three.js -Z
 
-    // If this is the first point or significantly different from the last point
-    if (pathVertices.length === 0) {
-      // First point - just add it
-      pathVertices.push(latestVertex);
-      addedNewPoint = true;
-    }
-    // Otherwise add it if it's different enough from the last point
-    else if (
-      latestVertex.distanceTo(pathVertices[pathVertices.length - 1]) > 0.02
-    ) {
-      pathVertices.push(latestVertex);
-      addedNewPoint = true;
-    }
+    // Skip if too close to previous point (optimization)
+    if (currentLength > 0) {
+      const lastIdx = ((currentLength - 1) % MAX_PATH_POINTS) * 3;
+      const lastX = positions[lastIdx];
+      const lastY = positions[lastIdx + 1];
+      const lastZ = positions[lastIdx + 2];
 
-    // Only update the geometry if we've added a new point
-    if (addedNewPoint && pathVertices.length > 0) {
-      // Create a new geometry using all stored vertices for continuous path
-      const positions = new Float32Array(pathVertices.length * 3);
-
-      for (let i = 0; i < pathVertices.length; i++) {
-        positions[i * 3] = pathVertices[i].x;
-        positions[i * 3 + 1] = pathVertices[i].y;
-        positions[i * 3 + 2] = pathVertices[i].z;
-      }
-
-      // Create a new geometry with our continuous path
-      const geometry = new THREE.BufferGeometry();
-      geometry.setAttribute(
-        "position",
-        new THREE.BufferAttribute(positions, 3)
+      const dist = Math.sqrt(
+        Math.pow(x - lastX, 2) + Math.pow(y - lastY, 2) + Math.pow(z - lastZ, 2)
       );
-      geometry.computeBoundingSphere();
 
-      // Replace old geometry
-      pathLine.geometry.dispose();
-      pathLine.geometry = geometry;
+      if (dist < 0.02) return; // Skip if too close
+    }
 
-      // Update stats if desired
-      if (statsRef.current && pathVertices.length > 0) {
-        let statsText = statsRef.current.textContent || "";
-        if (!statsText.includes("Path")) {
-          statsRef.current.textContent =
-            statsText + ` | Path: ${pathVertices.length} pts`;
-        }
+    // Add point to buffer (with circular buffer behavior)
+    const index = (currentLength % MAX_PATH_POINTS) * 3;
+    positions[index] = x;
+    positions[index + 1] = y;
+    positions[index + 2] = z;
+
+    // Update path length and notify Three.js only of what has changed
+    const newLength = currentLength + 1;
+    pathBufferRef.current.currentLength = newLength;
+
+    if (attribute) {
+      // Only mark the attribute as needing update, not recreating the whole geometry
+      attribute.needsUpdate = true;
+
+      // Update the draw range to show only valid points
+      if (newLength <= MAX_PATH_POINTS) {
+        // We haven't filled the buffer yet, show all points
+        pathLineRef.current.geometry.setDrawRange(0, newLength);
+      } else {
+        // Buffer is full, show all points in circular fashion
+        pathLineRef.current.geometry.setDrawRange(0, MAX_PATH_POINTS);
+      }
+    }
+
+    // Only occasionally update bounding sphere (every 20 points)
+    if (newLength % 20 === 0 || newLength === 1) {
+      pathLineRef.current.geometry.computeBoundingSphere();
+    }
+
+    // Update stats if desired
+    if (statsRef.current) {
+      let statsText = statsRef.current.textContent || "";
+      const pathLength = Math.min(newLength, MAX_PATH_POINTS);
+
+      if (!statsText.includes("Path")) {
+        statsRef.current.textContent = statsText + ` | Path: ${pathLength} pts`;
+      } else {
+        const parts = statsText.split(" | ");
+        parts[parts.length - 1] = `Path: ${pathLength} pts`;
+        statsRef.current.textContent = parts.join(" | ");
       }
     }
   }
 
-  // Clear path data
+  // Clear path data - now optimized
   const clearPath = () => {
-    bufferRef.current.pathVertices = [];
+    pathBufferRef.current.currentLength = 0;
+
     if (pathLineRef.current) {
-      const emptyGeometry = new THREE.BufferGeometry();
-      emptyGeometry.setAttribute(
-        "position",
-        new THREE.Float32BufferAttribute([], 3)
-      );
-      pathLineRef.current.geometry.dispose();
-      pathLineRef.current.geometry = emptyGeometry;
+      // Simply set draw range to zero instead of creating new geometry
+      pathLineRef.current.geometry.setDrawRange(0, 0);
+
+      // Update stats display
+      if (statsRef.current) {
+        let statsText = statsRef.current.textContent || "";
+        if (statsText.includes("Path")) {
+          const parts = statsText.split(" | ");
+          parts[parts.length - 1] = `Path: 0 pts`;
+          statsRef.current.textContent = parts.join(" | ");
+        }
+      }
     }
   };
 
@@ -496,175 +572,6 @@ function FastLidarVisualization({ ros, connection }: LidarVisualizationProps) {
   const togglePathVisibility = () => {
     setShowPath(!showPath);
   };
-
-  // Function to process pointcloud data (optimized)
-  function updatePointCloud(message: any, points: THREE.Points) {
-    const { height, width, point_step, data, fields } = message;
-    const totalPoints = height * width;
-
-    // Increase decimation factor for large point clouds to maintain performance
-    let currentDecimation = decimationFactor;
-    if (totalPoints > 100000) currentDecimation = decimationFactor * 2;
-    if (totalPoints > 200000) currentDecimation = decimationFactor * 4;
-
-    // Find offsets for x, y, z in the binary structure
-    const fieldOffsets: Record<string, number> = {};
-    if (fields) {
-      for (let i = 0; i < fields.length; i++) {
-        fieldOffsets[fields[i].name] = fields[i].offset;
-      }
-    }
-
-    // Default offsets if fields are not specified
-    const xOffset = fieldOffsets.x ?? 0;
-    const yOffset = fieldOffsets.y ?? 4;
-    const zOffset = fieldOffsets.z ?? 8;
-
-    // Get references to pre-allocated buffers
-    const { positions, colors } = bufferRef.current;
-
-    let validPoints = 0;
-    const maxPoints = Math.min(totalPoints, positions.length / 3);
-    const frustum = new THREE.Frustum().setFromProjectionMatrix(
-      new THREE.Matrix4().multiplyMatrices(
-        cameraRef.current!.projectionMatrix,
-        cameraRef.current!.matrixWorldInverse
-      )
-    );
-
-    // Process points with decimation and frustum culling
-    for (let i = 0; i < totalPoints; i += currentDecimation) {
-      if (validPoints >= maxPoints) break;
-
-      const baseOffset = i * point_step;
-      if (baseOffset + 12 > data.length) break; // Safety check
-
-      // Extract XYZ coordinates
-      const x = new Float32Array(
-        new Uint8Array([
-          data[baseOffset + xOffset],
-          data[baseOffset + xOffset + 1],
-          data[baseOffset + xOffset + 2],
-          data[baseOffset + xOffset + 3],
-        ]).buffer
-      )[0];
-
-      const y = new Float32Array(
-        new Uint8Array([
-          data[baseOffset + yOffset],
-          data[baseOffset + yOffset + 1],
-          data[baseOffset + yOffset + 2],
-          data[baseOffset + yOffset + 3],
-        ]).buffer
-      )[0];
-
-      const z = new Float32Array(
-        new Uint8Array([
-          data[baseOffset + zOffset],
-          data[baseOffset + zOffset + 1],
-          data[baseOffset + zOffset + 2],
-          data[baseOffset + zOffset + 3],
-        ]).buffer
-      )[0];
-
-      // Skip invalid points
-      if (
-        isNaN(x) ||
-        isNaN(y) ||
-        isNaN(z) ||
-        !isFinite(x) ||
-        !isFinite(y) ||
-        !isFinite(z)
-      ) {
-        continue;
-      }
-
-      // Convert to Three.js coordinates
-      const threeX = x;
-      const threeY = z;
-      const threeZ = -y;
-
-      // Skip points outside camera frustum (basic culling)
-      const point = new THREE.Vector3(threeX, threeY, threeZ);
-      if (!frustum.containsPoint(point) && Math.random() > 0.1) {
-        // Keep some outside-frustum points (10%) for context
-        continue;
-      }
-
-      // Add point to buffer
-      positions[validPoints * 3] = threeX;
-      positions[validPoints * 3 + 1] = threeY;
-      positions[validPoints * 3 + 2] = threeZ;
-
-      // Optimized color calculation
-      const heightValue = z;
-      let r, g, b;
-
-      // Simplified color mapping for better performance
-      if (heightValue < -0.5) {
-        // Blue for low points
-        r = 0;
-        g = 0.1;
-        b = 0.8;
-      } else if (heightValue < 0) {
-        // Cyan for ground level
-        r = 0;
-        g = 0.6;
-        b = 0.8;
-      } else if (heightValue < 1) {
-        // Green for medium height
-        r = 0.1;
-        g = 0.8;
-        b = 0.1;
-      } else if (heightValue < 2) {
-        // Yellow for tall objects
-        r = 0.8;
-        g = 0.8;
-        b = 0.1;
-      } else {
-        // Red for very tall objects
-        r = 0.8;
-        g = 0.1;
-        b = 0.1;
-      }
-
-      colors[validPoints * 3] = r;
-      colors[validPoints * 3 + 1] = g;
-      colors[validPoints * 3 + 2] = b;
-
-      validPoints++;
-    }
-
-    // Update stats display
-    if (statsRef.current) {
-      const decPercent = (100 - (validPoints / totalPoints) * 100).toFixed(1);
-      statsRef.current.textContent = `Points: ${validPoints.toLocaleString()}/${totalPoints.toLocaleString()} (${decPercent}% reduction)`;
-    }
-
-    // Only update geometry if we have valid points
-    if (validPoints > 0) {
-      // Create new geometry with the valid points
-      const geometry = new THREE.BufferGeometry();
-
-      // Slice only the portion of the buffers we need
-      const positionAttribute = new THREE.Float32BufferAttribute(
-        positions.slice(0, validPoints * 3),
-        3
-      );
-      const colorAttribute = new THREE.Float32BufferAttribute(
-        colors.slice(0, validPoints * 3),
-        3
-      );
-
-      geometry.setAttribute("position", positionAttribute);
-      geometry.setAttribute("color", colorAttribute);
-      geometry.computeBoundingSphere();
-
-      // Dispose old geometry and replace with new one
-      if (points.geometry) points.geometry.dispose();
-      points.geometry = geometry;
-    }
-  }
 
   const handleQualityAdjustment = (val: number) => {
     setDecimationFactor(val);
@@ -755,4 +662,4 @@ function FastLidarVisualization({ ros, connection }: LidarVisualizationProps) {
   );
 }
 
-export default FastLidarVisualization;
+export default MultithreadedLidarVisualization;
