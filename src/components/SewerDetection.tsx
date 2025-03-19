@@ -103,11 +103,16 @@ function SewerDetection({ connection, ros }: CameraProps) {
         const h = outputData[offset + 3]; // height
         const confidence = outputData[offset + 4]; // confidence
 
+        console.log(
+          `Raw detection: x=${x}, y=${y}, w=${w}, h=${h}, conf=${confidence}`
+        );
+
         // Convert from center coordinates to top-left, bottom-right
+        // IMPORTANT: Don't normalize to 0-1 range if model output is in absolute coordinates
         const x1 = Math.max(0, x - w / 2);
         const y1 = Math.max(0, y - h / 2);
-        const x2 = Math.min(1, x + w / 2);
-        const y2 = Math.min(1, y + h / 2);
+        const x2 = Math.min(640, x + w / 2); // Limit to image size
+        const y2 = Math.min(640, y + h / 2); // Limit to image size
 
         // Calculate score (just use confidence for now)
         const score = confidence;
@@ -116,10 +121,10 @@ function SewerDetection({ connection, ros }: CameraProps) {
         if (score > THRESHOLD) {
           detections.push([x1, y1, x2, y2, score]);
           console.log(
-            `Detection ${i}: Box: [${x1.toFixed(4)}, ${y1.toFixed(
-              4
-            )}, ${x2.toFixed(4)}, ${y2.toFixed(
-              4
+            `Detection ${i}: Box: [${x1.toFixed(1)}, ${y1.toFixed(
+              1
+            )}, ${x2.toFixed(1)}, ${y2.toFixed(
+              1
             )}], Confidence: ${score.toFixed(4)}`
           );
         }
@@ -137,7 +142,6 @@ function SewerDetection({ connection, ros }: CameraProps) {
       }
     }
   }
-
   // Run inference with the YOLO model
   async function runInference(imageUrl: string) {
     if (!sessionRef.current || !canvasRef.current) {
@@ -399,17 +403,23 @@ function SewerDetection({ connection, ros }: CameraProps) {
     for (const defect of trackedDefects) {
       const [x1, y1, x2, y2, confidence] = defect.box;
 
-      // Convert normalized coordinates (0-1) to pixel coordinates
-      const imgX1 = x1 * origWidth;
-      const imgY1 = y1 * origHeight;
-      const imgX2 = x2 * origWidth;
-      const imgY2 = y2 * origHeight;
+      // IMPORTANT CHANGE: Don't multiply by origWidth/origHeight
+      // as coordinates are already in pixel space
+      const imgX1 = x1;
+      const imgY1 = y1;
+      const imgX2 = x2;
+      const imgY2 = y2;
 
       // Scale to display dimensions
       const displayX1 = imgX1 * scaleX;
       const displayY1 = imgY1 * scaleY;
       const displayWidth = (imgX2 - imgX1) * scaleX;
       const displayHeight = (imgY2 - imgY1) * scaleY;
+
+      // Debug logs
+      console.log(
+        `Drawing box: [${displayX1}, ${displayY1}, ${displayWidth}, ${displayHeight}]`
+      );
 
       // Draw bounding box (red outline)
       ctx.beginPath();
