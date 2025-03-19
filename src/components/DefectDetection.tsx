@@ -33,8 +33,8 @@ function DefectDetection({ connection, ros }: CameraProps) {
   const MODEL_PATH = "./model/faces.onnx";
   const THROTTLE_INTERVAL = 500;
   const THRESHOLD = 0.7; // 70% confidence
-  const FACE_PERSISTENCE_TIMEOUT = 1500; // Time in ms to keep faces displayed after detection
-  const IOU_THRESHOLD = 0.3; // Minimum IoU to consider the same face
+  const FACE_PERSISTENCE_TIMEOUT = 2000; // Time in ms to keep faces displayed after detection
+  const IOU_THRESHOLD = 0.1; // Minimum IoU to consider the same face
 
   // Load the ONNX model
   useEffect(() => {
@@ -208,39 +208,55 @@ function DefectDetection({ connection, ros }: CameraProps) {
   function updateTrackedFaces(newDetections: number[][]) {
     const currentTime = Date.now();
     let updatedFaces = [...trackedFaces];
-    const matchedIndices = new Set<number>();
+    const matchedNewDetections = new Set<number>();
+    const matchedExistingDetections = new Set<number>();
     let idCounter = nextId;
 
-    // For each new detection, check if it matches an existing face
-    for (const newBox of newDetections) {
-      let matched = false;
-      let bestMatchIndex = -1;
-      let bestIoU = IOU_THRESHOLD;
+    for(let newIdx=0; newIdx < newDetections.length; newIdx++){
+      if (matchedNewDetections.has(newIdx)) continue;
 
-      // Compare with each existing face
-      for (let i = 0; i < updatedFaces.length; i++) {
-        if (matchedIndices.has(i)) continue; // Skip already matched faces
+      const newBox = newDetections[newIdx]
+      let bestMatchIndex = -1
+      let bestIoU = 0.1
 
-        const iou = calculateIoU(newBox, updatedFaces[i].box);
-        if (iou > bestIoU) {
-          bestIoU = iou;
-          bestMatchIndex = i;
-          matched = true;
+      for(let i=0; i<updatedFaces.length; i++){
+        if(matchedExistingDetections.has(i)) continue
+
+        const iou = calculateIoU(newBox, updatedFaces[i].box)
+
+        if(iou > bestIoU) {
+          bestIoU = iou
+          bestMatchIndex = i
         }
       }
 
-      if (matched) {
-        // Update existing face location and timestamp
-        updatedFaces[bestMatchIndex].box = newBox;
-        updatedFaces[bestMatchIndex].lastSeen = currentTime;
-        matchedIndices.add(bestMatchIndex);
-      } else {
-        // Add as new face
+      if(bestMatchIndex !== -1) {
+        updatedFaces[bestMatchIndex].box = newBox
+        updatedFaces[bestMatchIndex].lastSeen = currentTime
+        matchedExistingDetections.add(bestMatchIndex)
+        matchedNewDetections.add(newIdx)
+      }
+    }
+
+    for(let newIdx=0; newIdx<newDetections.length; newIdx++){
+      if(matchedNewDetections.has(newIdx)) continue
+
+      let tooClose = false
+      
+      for(let i=0; i<updatedFaces.length; i++){
+        const iou = calculateIoU(newDetections[newIdx], updatedFaces[i].box)
+        if(iou > 0.05){
+          tooClose = true
+          break
+        }
+      }
+
+      if(!tooClose){
         updatedFaces.push({
           id: idCounter++,
-          box: newBox,
-          lastSeen: currentTime,
-        });
+          box: newDetections[newIdx],
+          lastSeen: currentTime
+        })
       }
     }
 
