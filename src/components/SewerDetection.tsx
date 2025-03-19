@@ -7,16 +7,18 @@ interface CameraProps {
   ros: Ros | null;
 }
 
-interface TrackedFace {
+interface TrackedDefect {
   id: number;
   box: number[]; // [x1, y1, x2, y2, confidence]
   lastSeen: number; // timestamp
+  class?: number; // Class ID for different types of defects
+  className?: string; // Class name if available
 }
 
 function SewerDetection({ connection, ros }: CameraProps) {
   const [imageSrc, setImageSrc] = useState<string | null>(null);
   const [modelLoaded, setModelLoaded] = useState<boolean>(false);
-  const [trackedDefects, setTrackedDefects] = useState<TrackedFace[]>([]);
+  const [trackedDefects, setTrackedDefects] = useState<TrackedDefect[]>([]);
   const [lastDetectionTime, setLastDetectionTime] = useState<number>(0);
   const [nextId, setNextId] = useState<number>(1); // For generating unique defect IDs
 
@@ -30,16 +32,28 @@ function SewerDetection({ connection, ros }: CameraProps) {
   const MESSAGE_TYPE = "sensor_msgs/msg/CompressedImage";
   const MODEL_PATH = "./model/sewer_light.onnx";
   const THROTTLE_INTERVAL = 500;
-  const THRESHOLD = 0.7; // 70% confidence
+  const THRESHOLD = 0.25; // Lowered threshold for testing
   const DEFECT_PERSISTENCE_TIMEOUT = 2000; // Time in ms to keep defect displayed after detection
   const IOU_THRESHOLD = 0.1; // Minimum IoU to consider the same defect
+
+  // Class names for sewer defects (update these with your actual classes)
+  const CLASS_NAMES = [
+    "Background",
+    "Crack",
+    "Root",
+    "Deposit",
+    "Joint Damage",
+    "Connection",
+    "Surface Damage",
+    "Deformation",
+    "Obstacle",
+  ];
 
   // Load the ONNX model
   useEffect(() => {
     async function loadModel() {
       try {
-        // Create inference session
-        console.log("LOADING ONNX");
+        console.log("LOADING SEWER DETECTION MODEL");
         const session = await ort.InferenceSession.create(MODEL_PATH, {
           executionProviders: ["webgl", "wasm"],
           graphOptimizationLevel: "all",
@@ -49,6 +63,27 @@ function SewerDetection({ connection, ros }: CameraProps) {
         console.log("ONNX model loaded successfully");
         console.log("Model input names:", session.inputNames);
         console.log("Model output names:", session.outputNames);
+
+        // Log model metadata if available
+        if (session.inputNames.length > 0) {
+          const inputName = session.inputNames[0];
+          const inputInfo = session.inputNames.map((name) => ({
+            name,
+            dims: session._inputs[name].dims,
+            type: session._inputs[name].type,
+          }));
+          console.log("Input details:", inputInfo);
+        }
+
+        if (session.outputNames.length > 0) {
+          const outputInfo = session.outputNames.map((name) => ({
+            name,
+            dims: session._outputs[name]?.dims || "unknown",
+            type: session._outputs[name]?.type || "unknown",
+          }));
+          console.log("Output details:", outputInfo);
+        }
+
         setModelLoaded(true);
       } catch (err) {
         console.error("Failed to load ONNX model:", err);
@@ -86,7 +121,7 @@ function SewerDetection({ connection, ros }: CameraProps) {
     return intersectionArea / unionArea;
   }
 
-  // Preprocess image and run inference
+  // Preprocess image and run inference with debug logging
   async function runInference(imageUrl: string) {
     if (!sessionRef.current || !canvasRef.current) {
       return;
@@ -103,8 +138,9 @@ function SewerDetection({ connection, ros }: CameraProps) {
     lastInferenceTimeRef.current = now;
 
     try {
-      // Get input name from session
+      // Get input name from session - should be "images"
       const inputName = sessionRef.current.inputNames[0];
+      console.log("Using input name:", inputName);
 
       // Load the image
       const img = new Image();
@@ -114,19 +150,20 @@ function SewerDetection({ connection, ros }: CameraProps) {
         img.onerror = () => reject(new Error("Failed to load image"));
       });
 
-      // Draw image to canvas for processing
+      // Draw image to canvas for processing at 640x640
       const canvas = canvasRef.current;
       const ctx = canvas.getContext("2d");
       if (!ctx) return;
 
-      // Set canvas dimensions to 320x240 as specified in preprocessing
-      canvas.width = 320;
-      canvas.height = 240;
-      ctx.drawImage(img, 0, 0, 320, 240);
+      // Set canvas dimensions to 640x640 as required by the new model
+      canvas.width = 640;
+      canvas.height = 640;
+      ctx.drawImage(img, 0, 0, 640, 640);
 
       // Get image data
-      const imageData = ctx.getImageData(0, 0, 320, 240);
+      const imageData = ctx.getImageData(0, 0, 640, 640);
       const { data, width, height } = imageData;
+      console.log("Processing image dimensions:", width, "x", height);
 
       // Create a Float32Array for the tensor
       const tensor = new Float32Array(1 * 3 * height * width);
@@ -136,9 +173,10 @@ function SewerDetection({ connection, ros }: CameraProps) {
         for (let x = 0; x < width; x++) {
           const pixelOffset = (y * width + x) * 4; // RGBA
 
-          const b = (data[pixelOffset] - 127) / 128;
-          const g = (data[pixelOffset + 1] - 127) / 128;
-          const r = (data[pixelOffset + 2] - 127) / 128;
+          // Normalize pixel values to [0,1] range (sewer models often use 0-1 normalization)
+          const r = data[pixelOffset] / 255.0;
+          const g = data[pixelOffset + 1] / 255.0;
+          const b = data[pixelOffset + 2] / 255.0;
 
           // Map to CHW format
           tensor[0 * height * width + y * width + x] = r;
@@ -155,50 +193,152 @@ function SewerDetection({ connection, ros }: CameraProps) {
         width,
       ]);
       const feeds = { [inputName]: inputTensor };
+
+      console.log("Running inference...");
+      console.time("inference");
       const results = await sessionRef.current.run(feeds);
+      console.timeEnd("inference");
 
-      // Process boxes
-      const boxesData = new Float32Array(results.boxes.data);
-      const boxesReshaped: number[][] = [];
-      for (let i = 0; i < boxesData.length; i += 4) {
-        boxesReshaped.push([
-          boxesData[i],
-          boxesData[i + 1],
-          boxesData[i + 2],
-          boxesData[i + 3],
-        ]);
-      }
+      console.log("Model output keys:", Object.keys(results));
 
-      // Process scores
-      const scoresData = new Float32Array(results.scores.data);
-      const confidenceBoxes: number[] = [];
-      for (let i = 0; i < scoresData.length / 2; i++) {
-        if (scoresData[i * 2 + 1] > THRESHOLD) {
-          confidenceBoxes.push(i);
+      // Log detailed information about each output tensor
+      for (const outputName in results) {
+        const outputTensor = results[outputName];
+        console.log(`Output "${outputName}":`);
+        console.log("  - Shape:", outputTensor.dims);
+        console.log("  - Type:", outputTensor.type);
+        console.log("  - Data length:", outputTensor.data.length);
+
+        // Log a sample of the data
+        const dataArray = Array.from(outputTensor.data as Float32Array);
+        console.log("  - First 20 values:", dataArray.slice(0, 20));
+
+        // YOLOv5/v8 typically outputs data in the format [num_boxes, 5 + num_classes]
+        // where 5 represents [x, y, width, height, confidence]
+        if (outputTensor.dims.length === 3) {
+          console.log(
+            "  - Appears to be YOLOv5/v8 output format (batch, num_boxes, data)"
+          );
+          const [batch, boxes, data_per_box] = outputTensor.dims;
+          console.log(
+            `  - Batch: ${batch}, Boxes: ${boxes}, Data per box: ${data_per_box}`
+          );
+
+          // Assuming output is in format [cx, cy, w, h, conf, class_probs...]
+          const numClasses = data_per_box - 5;
+          console.log(`  - Detected ${numClasses} classes in output`);
         }
       }
 
-      // Match and update defect based on IoU
-      if (confidenceBoxes.length > 0) {
-        // Extract the actual model boxes with confidence scores
-        const newDetections = confidenceBoxes.map((idx) => {
-          const box = boxesReshaped[idx];
-          const confidence = scoresData[idx * 2 + 1];
-          return [...box, confidence]; // [x1, y1, x2, y2, confidence]
-        });
-
-        // Update tracked defect using IoU
-        updateTrackedDefects(newDetections);
+      // Now we need to process the output based on its structure
+      // For YOLO models, output is typically an array of bounding boxes
+      if (results["output0"]) {
+        const outputData = results["output0"].data as Float32Array;
+        const outputShape = results["output0"].dims;
+        processYoloOutput(outputData, outputShape);
       } else {
-        // Check if we should clear defect due to timeout
-        checkDefectTimeout();
+        console.error("Expected output 'output0' not found in results");
       }
-
-      // Always draw tracked defect
-      drawTrackedDefects();
     } catch (error) {
       console.error("Inference error:", error);
     }
+  }
+
+  // Process YOLO model output (used by many object detection models)
+  function processYoloOutput(outputData: Float32Array, outputShape: number[]) {
+    console.log("Processing YOLO output with shape:", outputShape);
+
+    // Determine the format based on the shape
+    if (outputShape.length === 3) {
+      // Typical YOLOv5/v8 format: [batch, num_boxes, box_data]
+      const [batch, numDetections, boxDataLength] = outputShape;
+      const numClasses = boxDataLength - 5; // 5 for x, y, w, h, confidence
+
+      console.log(
+        `Found ${numDetections} potential detections with ${numClasses} classes`
+      );
+
+      const detections: any = [];
+
+      // Process each detection
+      for (let i = 0; i < numDetections; i++) {
+        const offset = i * boxDataLength;
+
+        // YOLOv5/v8 outputs are typically centerX, centerY, width, height
+        const x = outputData[offset + 0]; // centerX
+        const y = outputData[offset + 1]; // centerY
+        const w = outputData[offset + 2]; // width
+        const h = outputData[offset + 3]; // height
+        const confidence = outputData[offset + 4]; // confidence
+
+        // Convert centerX, centerY, width, height to x1, y1, x2, y2
+        const x1 = x - w / 2;
+        const y1 = y - h / 2;
+        const x2 = x + w / 2;
+        const y2 = y + h / 2;
+
+        // Find class with highest probability
+        let maxClassProb = 0;
+        let maxClassIdx = 0;
+
+        for (let c = 0; c < numClasses; c++) {
+          const classProb = outputData[offset + 5 + c];
+          if (classProb > maxClassProb) {
+            maxClassProb = classProb;
+            maxClassIdx = c;
+          }
+        }
+
+        // Calculate final score (confidence * class probability)
+        const score = confidence * maxClassProb;
+
+        // Log detailed information for higher confidence detections
+        if (score > 0.1) {
+          console.log(`Detection ${i}:`);
+          console.log(
+            `  Position: (${x.toFixed(4)}, ${y.toFixed(4)}), Size: ${w.toFixed(
+              4
+            )}x${h.toFixed(4)}`
+          );
+          console.log(
+            `  Box: [${x1.toFixed(4)}, ${y1.toFixed(4)}, ${x2.toFixed(
+              4
+            )}, ${y2.toFixed(4)}]`
+          );
+          console.log(`  Confidence: ${confidence.toFixed(4)}`);
+          console.log(
+            `  Class: ${maxClassIdx} (${CLASS_NAMES[maxClassIdx] || "Unknown"})`
+          );
+          console.log(`  Class Probability: ${maxClassProb.toFixed(4)}`);
+          console.log(`  Final Score: ${score.toFixed(4)}`);
+        }
+
+        // Add to detections if above threshold
+        if (score > THRESHOLD) {
+          detections.push([x1, y1, x2, y2, score, maxClassIdx]);
+        }
+      }
+
+      console.log(
+        `Found ${detections.length} detections above threshold ${THRESHOLD}`
+      );
+
+      // Update tracked defects
+      if (detections.length > 0) {
+        updateTrackedDefects(detections);
+      } else {
+        checkDefectTimeout();
+      }
+    } else if (outputShape.length === 2) {
+      // Older YOLO formats: [num_boxes, box_data]
+      console.log("Processing 2D output format");
+      // Similar processing for 2D output would go here
+    } else {
+      console.warn("Unrecognized output format with shape:", outputShape);
+    }
+
+    // Always draw tracked defects
+    drawTrackedDefects();
   }
 
   // Update tracked defects using IoU matching
@@ -209,12 +349,18 @@ function SewerDetection({ connection, ros }: CameraProps) {
     const matchedExistingDetections = new Set<number>();
     let idCounter = nextId;
 
+    console.log(
+      "Updating tracked defects with new detections:",
+      newDetections.length
+    );
+
     for (let newIdx = 0; newIdx < newDetections.length; newIdx++) {
       if (matchedNewDetections.has(newIdx)) continue;
 
-      const newBox = newDetections[newIdx];
+      const newBox = newDetections[newIdx].slice(0, 5); // Use just the box and score
+      const classId = newDetections[newIdx][5] || 0;
       let bestMatchIndex = -1;
-      let bestIoU = 0.1;
+      let bestIoU = IOU_THRESHOLD;
 
       for (let i = 0; i < updatedDefs.length; i++) {
         if (matchedExistingDetections.has(i)) continue;
@@ -230,6 +376,9 @@ function SewerDetection({ connection, ros }: CameraProps) {
       if (bestMatchIndex !== -1) {
         updatedDefs[bestMatchIndex].box = newBox;
         updatedDefs[bestMatchIndex].lastSeen = currentTime;
+        updatedDefs[bestMatchIndex].class = classId;
+        updatedDefs[bestMatchIndex].className =
+          CLASS_NAMES[classId] || "Unknown";
         matchedExistingDetections.add(bestMatchIndex);
         matchedNewDetections.add(newIdx);
       }
@@ -241,18 +390,25 @@ function SewerDetection({ connection, ros }: CameraProps) {
       let tooClose = false;
 
       for (let i = 0; i < updatedDefs.length; i++) {
-        const iou = calculateIoU(newDetections[newIdx], updatedDefs[i].box);
-        if (iou > 0.05) {
+        const iou = calculateIoU(
+          newDetections[newIdx].slice(0, 5),
+          updatedDefs[i].box
+        );
+
+        if (iou > IOU_THRESHOLD / 2) {
           tooClose = true;
           break;
         }
       }
 
       if (!tooClose) {
+        const classId = newDetections[newIdx][5] || 0;
         updatedDefs.push({
           id: idCounter++,
-          box: newDetections[newIdx],
+          box: newDetections[newIdx].slice(0, 5),
           lastSeen: currentTime,
+          class: classId,
+          className: CLASS_NAMES[classId] || "Unknown",
         });
       }
     }
@@ -347,7 +503,7 @@ function SewerDetection({ connection, ros }: CameraProps) {
     }
   };
 
-  // Draw tracked defect
+  // Draw tracked defects
   function drawTrackedDefects() {
     if (!overlayCanvasRef.current || !imageRef.current) return;
 
@@ -361,8 +517,8 @@ function SewerDetection({ connection, ros }: CameraProps) {
     if (trackedDefects.length === 0) return;
 
     // Original image dimensions from preprocessing
-    const origWidth = 320;
-    const origHeight = 240;
+    const origWidth = 640;
+    const origHeight = 640;
 
     // Display dimensions
     const displayWidth = canvas.width;
@@ -372,13 +528,18 @@ function SewerDetection({ connection, ros }: CameraProps) {
     const scaleX = displayWidth / origWidth;
     const scaleY = displayHeight / origHeight;
 
-    // Setup drawing style - RED border with TRANSPARENT fill
-    ctx.lineWidth = 3;
-    ctx.strokeStyle = "rgba(255, 0, 0, 0.9)"; // Red border
-
     // Draw each tracked defect
-    for (const df of trackedDefects) {
-      const [x1, y1, x2, y2, confidence] = df.box;
+    for (const defect of trackedDefects) {
+      const [x1, y1, x2, y2, confidence] = defect.box;
+      const className = defect.className || "Unknown";
+
+      // Generate a color based on the class ID
+      const classId = defect.class || 0;
+      const hue = (classId * 30) % 360;
+      const color = `hsl(${hue}, 100%, 50%)`;
+
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = color;
 
       // Convert normalized coordinates to pixel coordinates
       const imgX1 = x1 * origWidth;
@@ -386,36 +547,32 @@ function SewerDetection({ connection, ros }: CameraProps) {
       const imgX2 = x2 * origWidth;
       const imgY2 = y2 * origHeight;
 
-      // Make the box square (similar to scale() in Python)
-      const width = imgX2 - imgX1;
-      const height = imgY2 - imgY1;
-      const maximum = Math.max(width, height);
-      const dx = (maximum - width) / 2;
-      const dy = (maximum - height) / 2;
-
-      const squareBox = [imgX1 - dx, imgY1 - dy, imgX2 + dx, imgY2 + dy];
-
       // Scale to display dimensions
-      const displayX1 = squareBox[0] * scaleX;
-      const displayY1 = squareBox[1] * scaleY;
-      const displayWidth = (squareBox[2] - squareBox[0]) * scaleX;
-      const displayHeight = (squareBox[3] - squareBox[1]) * scaleY;
+      const displayX1 = imgX1 * scaleX;
+      const displayY1 = imgY1 * scaleY;
+      const displayWidth = (imgX2 - imgX1) * scaleX;
+      const displayHeight = (imgY2 - imgY1) * scaleY;
 
       // Draw bounding box with transparent fill
       ctx.beginPath();
       ctx.rect(displayX1, displayY1, displayWidth, displayHeight);
       ctx.stroke(); // Only stroke, no fill
 
-      // Add label with ID and confidence score
-      ctx.fillStyle = "rgba(255, 0, 0, 0.9)"; // Red text
+      // Add colored background for text
+      const labelText = `${className}: ${(confidence * 100).toFixed(1)}%`;
+      const textWidth = ctx.measureText(labelText).width + 10;
+      ctx.fillStyle = color;
+      ctx.globalAlpha = 0.7;
+      ctx.fillRect(displayX1, displayY1 - 25, textWidth, 25);
+      ctx.globalAlpha = 1.0;
+
+      // Add label with class name and confidence score
+      ctx.fillStyle = "white";
       ctx.font = "bold 16px Arial";
-      ctx.fillText(
-        `Defect #${df.id}: ${(confidence * 100).toFixed(1)}%`,
-        displayX1 + 5,
-        displayY1 + 20
-      );
+      ctx.fillText(labelText, displayX1 + 5, displayY1 - 7);
     }
 
+    // Add count of defects
     ctx.fillStyle = "rgba(0, 0, 0, 0.7)";
     ctx.fillRect(10, 10, 240, 30);
     ctx.fillStyle = "white";
@@ -451,7 +608,9 @@ function SewerDetection({ connection, ros }: CameraProps) {
       ) : (
         <p className="text-gray-500">Waiting for camera feed...</p>
       )}
-      {!modelLoaded && <p className="text-yellow-600">Loading model...</p>}
+      {!modelLoaded && (
+        <p className="text-yellow-600">Loading sewer detection model...</p>
+      )}
     </div>
   );
 }
