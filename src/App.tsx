@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from "react";
 import Camera from "./components/Camera";
 import DefectDetection from "./components/DefectDetection";
-import FastCamera from "./components/FastCamera";
+// import Camera from "./components/Camera";
+import SewerDetection from "./components/SewerDetection";
 import SLAM from "./components/SLAM";
 // import DefectQueue from "./components/DefectExport";
 import Dashboard from "./components/Dashboard";
@@ -182,8 +183,8 @@ Confidence,${defect.confidence.toFixed(2)}%
     <div className="flex justify-center ">
       <div className="grid grid-cols-2 gap-5 w-[95%] mt-5 justify-center">
         {/* <Camera connection={connected} ros={ros} /> */}
-        {/* <FastCamera connection={connected} ros={ros} /> */}
-        <DefectDetection connection={connected} ros={ros} />
+        {/* <FaceDetection connection={connected} ros={ros} /> */}
+        <SewerDetection connection={connected} ros={ros} />
         <SLAM connection={true} ros={ros} />
         <Dashboard connection={connected} ros={ros} />
       </div>
