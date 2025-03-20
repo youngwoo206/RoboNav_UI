@@ -30,8 +30,8 @@ function SewerDetection({ connection, ros }: CameraProps) {
   const CAMERA_TOPIC = "/husky3/camera_0/color/image_raw/compressed";
   const MESSAGE_TYPE = "sensor_msgs/msg/CompressedImage";
   const MODEL_PATH = "./model/sewer_light.onnx";
-  const THROTTLE_INTERVAL = 500;
-  const THRESHOLD = 0.7; // 70% confidence
+  const THROTTLE_INTERVAL = 1000;
+  const THRESHOLD = 70; // 70% confidence
   const DEFECT_PERSISTENCE_TIMEOUT = 2000;
   const IOU_THRESHOLD = 0.1;
 
