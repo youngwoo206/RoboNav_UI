@@ -1,6 +1,5 @@
 import { useState, useEffect, useRef } from "react";
 import Camera from "./components/Camera";
-import DefectDetection from "./components/DefectDetection";
 // import Camera from "./components/Camera";
 import SewerDetection from "./components/SewerDetection";
 import SLAM from "./components/SLAM";
