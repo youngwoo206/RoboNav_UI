@@ -85,53 +85,67 @@ function SewerDetection({ connection, ros }: CameraProps) {
 
   // Process YOLO output and extract bounding boxes
   function processYoloOutput(outputData: Float32Array, outputShape: number[]) {
+    // YOLOv8 output format is [batch, values_per_point, num_points]
     if (outputShape.length === 3) {
-      // YOLO format [batch, num_boxes, box_data]
-      const [batch, numDetections, boxDataLength] = outputShape;
-      console.log(`Found ${numDetections} potential detections`);
+      const [batch, values_per_point, num_points] = outputShape;
+      console.log(
+        `YOLOv8 output shape: [${batch}, ${values_per_point}, ${num_points}]`
+      );
 
       const detections: number[][] = [];
+      const threshold = 0.7; // 70% confidence (adjust to match your THRESHOLD)
 
-      // Process each detection
-      for (let i = 0; i < numDetections; i++) {
-        const offset = i * boxDataLength;
+      // Process each potential detection point
+      for (let point = 0; point < num_points; point++) {
+        // Get objectness score to filter low-confidence detections early
+        const confidence = outputData[4 * num_points + point];
 
-        // Extract centerX, centerY, width, height and confidence
-        const x = outputData[offset + 0]; // centerX
-        const y = outputData[offset + 1]; // centerY
-        const w = outputData[offset + 2]; // width
-        const h = outputData[offset + 3]; // height
-        const confidence = outputData[offset + 4]; // confidence
+        // Only process high confidence detections
+        if (confidence > threshold) {
+          // Get coordinates (x, y, width, height)
+          const x = outputData[0 * num_points + point];
+          const y = outputData[1 * num_points + point];
+          const w = outputData[2 * num_points + point];
+          const h = outputData[3 * num_points + point];
 
-        console.log(
-          `Raw detection: x=${x}, y=${y}, w=${w}, h=${h}, conf=${confidence}`
-        );
+          // Find highest scoring class
+          let maxClassScore = 0;
+          let maxClassIdx = 0;
 
-        // Convert from center coordinates to top-left, bottom-right
-        // IMPORTANT: Don't normalize to 0-1 range if model output is in absolute coordinates
-        const x1 = Math.max(0, x - w / 2);
-        const y1 = Math.max(0, y - h / 2);
-        const x2 = Math.min(640, x + w / 2); // Limit to image size
-        const y2 = Math.min(640, y + h / 2); // Limit to image size
+          const numClasses = values_per_point - 5;
+          for (let cls = 0; cls < numClasses; cls++) {
+            const classScore = outputData[(5 + cls) * num_points + point];
+            if (classScore > maxClassScore) {
+              maxClassScore = classScore;
+              maxClassIdx = cls;
+            }
+          }
 
-        // Calculate score (just use confidence for now)
-        const score = confidence;
+          // Calculate final score
+          const score = confidence * maxClassScore;
 
-        // Add detection if score is above threshold
-        if (score > THRESHOLD) {
-          detections.push([x1, y1, x2, y2, score]);
+          // Convert from center coordinates to corner coordinates
+          const x1 = Math.max(0, x - w / 2);
+          const y1 = Math.max(0, y - h / 2);
+          const x2 = Math.min(640, x + w / 2);
+          const y2 = Math.min(640, y + h / 2);
+
           console.log(
-            `Detection ${i}: Box: [${x1.toFixed(1)}, ${y1.toFixed(
+            `Detection at point ${point}: [${x1.toFixed(1)},${y1.toFixed(
               1
-            )}, ${x2.toFixed(1)}, ${y2.toFixed(
-              1
-            )}], Confidence: ${score.toFixed(4)}`
+            )},${x2.toFixed(1)},${y2.toFixed(1)}], ` +
+              `Confidence: ${confidence.toFixed(
+                4
+              )}, Class: ${maxClassIdx}, Final score: ${score.toFixed(4)}`
           );
+
+          // Add detection if it passes our threshold
+          detections.push([x1, y1, x2, y2, confidence]);
         }
       }
 
       console.log(
-        `Found ${detections.length} detections above threshold ${THRESHOLD}`
+        `Found ${detections.length} detections above threshold ${threshold}`
       );
 
       // Update tracked defects if any were found
