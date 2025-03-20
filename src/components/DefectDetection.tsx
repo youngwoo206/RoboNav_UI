@@ -1,18 +1,21 @@
+/* eslint-disable prefer-const */
+/* eslint-disable @typescript-eslint/no-unused-vars */
 import ROSLIB, { Ros } from "roslib";
 import { useEffect, useState, useRef } from "react";
 import * as ort from "onnxruntime-web";
-import {useDataContext, TrackedFace} from "@/context/DataProvider"
+import {useDataContext} from "@/context/DataProvider";
+
 interface CameraProps {
   connection: boolean;
   ros: Ros | null;
 }
 
-// Define a tracked face interface with unique ID
-// interface TrackedFace {
-//   id: number;
-//   box: number[]; // [x1, y1, x2, y2, confidence]
-//   lastSeen: number; // timestamp
-// }
+//Define a tracked face interface with unique ID
+interface TrackedFace {
+  id: number;
+  box: number[]; // [x1, y1, x2, y2, confidence]
+  lastSeen: number; // timestamp
+}
 
 function DefectDetection({ connection, ros }: CameraProps) {
   const [imageSrc, setImageSrc] = useState<string | null>(null);
@@ -35,7 +38,22 @@ function DefectDetection({ connection, ros }: CameraProps) {
   const THRESHOLD = 0.7; // 70% confidence
   const FACE_PERSISTENCE_TIMEOUT = 2000; // Time in ms to keep faces displayed after detection
   const IOU_THRESHOLD = 0.1; // Minimum IoU to consider the same face
-  const { addDefect } = useDataContext();
+  const { addDefect, setCurrentCameraImage, setCurrentOverlayCanvas } = useDataContext();
+
+  useEffect(() => {
+    if (imageSrc){
+      setCurrentCameraImage(imageSrc);
+    }
+  }, [imageSrc, setCurrentCameraImage]);
+
+  useEffect(() => {
+    if (overlayCanvasRef.current){
+      setCurrentOverlayCanvas(overlayCanvasRef.current);
+    }
+  }, [trackedFaces, setCurrentOverlayCanvas]);
+  useEffect(() => {
+    console.log(trackedFaces)
+  }, [trackedFaces])
 
   // Load the ONNX model
   useEffect(() => {
@@ -254,20 +272,18 @@ function DefectDetection({ connection, ros }: CameraProps) {
 
       if (!tooClose) {
         const newFace = {
-          id: idCounter,
+          id: idCounter++,
           box: newDetections[newIdx],
           lastSeen: currentTime
         };
         updatedFaces.push(newFace);
-        
+
         // Notify context about the new defect
         addDefect(newFace);
       }
     }
 
-    // Update the next ID counter
     setNextId(idCounter);
-
     // Update the face state
     setTrackedFaces(updatedFaces);
     setLastDetectionTime(currentTime);

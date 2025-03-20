@@ -1,5 +1,6 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 import React, { useState, useEffect } from 'react';
-import { Download, MapPin, Camera, List, PanelBottomClose, ChevronDown } from 'lucide-react';
+import { Download, MapPin, Camera, List, PanelBottomClose, ChevronDown, FileText } from 'lucide-react';
 import { useDataContext } from "@/context/DataProvider";
 
 // TypeScript interfaces
@@ -18,13 +19,6 @@ interface Defect {
   confidence: number;
 }
 
-interface ExportData {
-  defect: Defect;
-  cameraImage: string; // Base64 or blob URL
-  slamMapImage: string; // Base64 or blob URL
-  format: 'csv' | 'pdf';
-}
-
 // Define the minimal props we need
 interface DefectQueueProps {
   className?: string;
@@ -36,9 +30,8 @@ const DefectQueue: React.FC<DefectQueueProps> = ({
 }) => {
   const { 
     defects, 
-    handleExport: exportToFormat, 
-    getCameraScreenshot, 
-    getSlamMapScreenshot 
+    exportCSV,
+    downloadImages
   } = useDataContext();
   
   const [selectedDefect, setSelectedDefect] = useState<Defect | null>(null);
@@ -52,24 +45,25 @@ const DefectQueue: React.FC<DefectQueueProps> = ({
     }
   }, [defects, selectedDefect]);
 
-  // Handle export button click
-  const handleExport = async (format: 'csv' | 'pdf'): Promise<void> => {
+  // Handle export CSV button click
+  const handleExportCSV = async (): Promise<void> => {
     if (!selectedDefect) return;
     
     try {
-      // Get screenshots
-      const cameraImage = await getCameraScreenshot(selectedDefect.id);
-      const slamMapImage = await getSlamMapScreenshot(selectedDefect.position);
-      
-      // Call context's export handler
-      exportToFormat({
-        defect: selectedDefect,
-        cameraImage,
-        slamMapImage,
-        format
-      });
+      await exportCSV(selectedDefect);
     } catch (error) {
-      console.error("Export failed:", error);
+      console.error("CSV export failed:", error);
+    }
+  };
+
+  // Handle download images button click
+  const handleDownloadImages = async (): Promise<void> => {
+    if (!selectedDefect) return;
+    
+    try {
+      await downloadImages(selectedDefect);
+    } catch (error) {
+      console.error("Image download failed:", error);
     }
   };
 
@@ -172,18 +166,18 @@ const DefectQueue: React.FC<DefectQueueProps> = ({
 
             <div className="flex space-x-2">
               <button
-                onClick={() => handleExport('csv')}
+                onClick={handleExportCSV}
                 className="flex-1 flex items-center justify-center py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
               >
                 <Download size={16} className="mr-2" />
                 Export CSV
               </button>
               <button
-                onClick={() => handleExport('pdf')}
+                onClick={handleDownloadImages}
                 className="flex-1 flex items-center justify-center py-2 bg-green-600 text-white rounded hover:bg-green-700 transition-colors"
               >
-                <Download size={16} className="mr-2" />
-                Export PDF
+                <Camera size={16} className="mr-2" />
+                Download Images
               </button>
             </div>
           </div>

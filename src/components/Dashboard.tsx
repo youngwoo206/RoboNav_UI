@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 import Input from "./Input";
 import Telemetry from "./Telemetry";
 import DefectQueueTest from "./DefectQueueTest";
