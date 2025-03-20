@@ -88,9 +88,9 @@ function SewerDetection({ connection, ros }: CameraProps) {
     // YOLOv8 output format is [batch, values_per_point, num_points]
     if (outputShape.length === 3) {
       const [batch, values_per_point, num_points] = outputShape;
-      console.log(
-        `YOLOv8 output shape: [${batch}, ${values_per_point}, ${num_points}]`
-      );
+      // console.log(
+      //   `YOLOv8 output shape: [${batch}, ${values_per_point}, ${num_points}]`
+      // );
 
       const detections: number[][] = [];
 
@@ -129,23 +129,23 @@ function SewerDetection({ connection, ros }: CameraProps) {
           const x2 = Math.min(320, x + w / 2);
           const y2 = Math.min(320, y + h / 2);
 
-          console.log(
-            `Detection at point ${point}: [${x1.toFixed(1)},${y1.toFixed(
-              1
-            )},${x2.toFixed(1)},${y2.toFixed(1)}], ` +
-              `Confidence: ${confidence.toFixed(
-                4
-              )}, Class: ${maxClassIdx}, Final score: ${score.toFixed(4)}`
-          );
+          // console.log(
+          //   `Detection at point ${point}: [${x1.toFixed(1)},${y1.toFixed(
+          //     1
+          //   )},${x2.toFixed(1)},${y2.toFixed(1)}], ` +
+          //     `Confidence: ${confidence.toFixed(
+          //       4
+          //     )}, Class: ${maxClassIdx}, Final score: ${score.toFixed(4)}`
+          // );
 
           // Add detection if it passes our threshold
           detections.push([x1, y1, x2, y2, confidence]);
         }
       }
 
-      console.log(
-        `Found ${detections.length} detections above threshold ${THRESHOLD}`
-      );
+      // console.log(
+      //   `Found ${detections.length} detections above threshold ${THRESHOLD}`
+      // );
 
       // Update tracked defects if any were found
       if (detections.length > 0) {
@@ -223,7 +223,6 @@ function SewerDetection({ connection, ros }: CameraProps) {
       const feeds = {};
       feeds[inputName] = inputTensor;
 
-      console.log("Running inference...");
       const results = await sessionRef.current.run(feeds);
 
       // Process YOLO output
@@ -430,9 +429,9 @@ function SewerDetection({ connection, ros }: CameraProps) {
       const displayHeight = (imgY2 - imgY1) * scaleY;
 
       // Debug logs
-      console.log(
-        `Drawing box: [${displayX1}, ${displayY1}, ${displayWidth}, ${displayHeight}]`
-      );
+      // console.log(
+      //   `Drawing box: [${displayX1}, ${displayY1}, ${displayWidth}, ${displayHeight}]`
+      // );
 
       // Draw bounding box (red outline)
       ctx.beginPath();
