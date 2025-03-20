@@ -1,6 +1,7 @@
 import ROSLIB, { Ros } from "roslib";
 import { useEffect, useState, useRef } from "react";
 import * as ort from "onnxruntime-web";
+import { useDataContext } from "@/context/DataProvider"; // Import the data context
 
 interface CameraProps {
   connection: boolean;
@@ -14,6 +15,9 @@ interface TrackedDefect {
 }
 
 function SewerDetection({ connection, ros }: CameraProps) {
+  // Get functions from the data context
+  const { addDefect, setCurrentCameraImage, setCurrentOverlayCanvas } = useDataContext();
+
   const [imageSrc, setImageSrc] = useState<string | null>(null);
   const [modelLoaded, setModelLoaded] = useState<boolean>(false);
   const [trackedDefects, setTrackedDefects] = useState<TrackedDefect[]>([]);
@@ -292,11 +296,18 @@ function SewerDetection({ connection, ros }: CameraProps) {
       }
 
       if (!tooClose) {
-        updatedDefs.push({
+        // Create new tracked defect
+        const newDefect = {
           id: idCounter++,
           box: newDetections[newIdx],
           lastSeen: currentTime,
-        });
+        };
+        
+        // Add to local tracked defects
+        updatedDefs.push(newDefect);
+        
+        // Also add to the defect queue through context
+        addDefect(newDefect);
       }
     }
 
@@ -327,6 +338,20 @@ function SewerDetection({ connection, ros }: CameraProps) {
     }, 500);
     return () => clearInterval(timer);
   }, [trackedDefects]);
+
+  // Share current camera image with context whenever it changes
+  useEffect(() => {
+    if (imageSrc) {
+      setCurrentCameraImage(imageSrc);
+    }
+  }, [imageSrc, setCurrentCameraImage]);
+
+  // Share overlay canvas with context whenever tracked defects change
+  useEffect(() => {
+    if (overlayCanvasRef.current) {
+      setCurrentOverlayCanvas(overlayCanvasRef.current);
+    }
+  }, [trackedDefects, setCurrentOverlayCanvas]);
 
   // Subscribe to ROS camera topic
   useEffect(() => {
@@ -369,7 +394,7 @@ function SewerDetection({ connection, ros }: CameraProps) {
         listener.unsubscribe();
       };
     }
-  }, [ros, connection, modelLoaded]);
+  }, [ros, connection, modelLoaded, setCurrentCameraImage]);
 
   // Handle image load and setup canvas
   const handleImageLoad = () => {
