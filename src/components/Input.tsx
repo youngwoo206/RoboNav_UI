@@ -3,6 +3,7 @@ import { useState, useEffect, useRef } from "react";
 import ROSLIB from "roslib";
 import Key from "./Key";
 import SpeedIndicator from "./SpeedIndicator";
+import Telemetry from "./Telemetry";
 
 interface TwistMessage {
   linear: {
@@ -38,11 +39,13 @@ function Input({ ros, connection }: RosIntegrationProps) {
   const CMD_VEL_TYPE = "geometry_msgs/msg/Twist";
 
   // Create a ROS publisher for cmd_vel
-  const cmdVelPublisher = ros ? new ROSLIB.Topic({
-    ros,
-    name: CMD_VEL_TOPIC,
-    messageType: CMD_VEL_TYPE
-  }) : null;
+  const cmdVelPublisher = ros
+    ? new ROSLIB.Topic({
+        ros,
+        name: CMD_VEL_TOPIC,
+        messageType: CMD_VEL_TYPE,
+      })
+    : null;
 
   // Send an emergency stop command
   const sendEStopCommand = () => {
@@ -54,21 +57,21 @@ function Input({ ros, connection }: RosIntegrationProps) {
     // Create a zero velocity twist message
     const stopMsg: TwistMessage = {
       linear: { x: 0, y: 0, z: 0 },
-      angular: { x: 0, y: 0, z: 0 }
+      angular: { x: 0, y: 0, z: 0 },
     };
 
     // Send multiple stop commands to ensure they are received
     cmdVelPublisher.publish(new ROSLIB.Message(stopMsg));
-    
+
     // Send additional stop commands with slight delays for redundancy
     setTimeout(() => {
       if (cmdVelPublisher) cmdVelPublisher.publish(new ROSLIB.Message(stopMsg));
     }, 50);
-    
+
     setTimeout(() => {
       if (cmdVelPublisher) cmdVelPublisher.publish(new ROSLIB.Message(stopMsg));
     }, 100);
-    
+
     console.log("E-STOP command sent");
   };
 
@@ -76,14 +79,14 @@ function Input({ ros, connection }: RosIntegrationProps) {
   const toggleEStop = () => {
     const newEStopState = !eStopActive;
     setEStopActive(newEStopState);
-    
+
     if (newEStopState) {
       // Activating E-Stop
       setDirection(null);
       sendEStopCommand();
     }
     // When deactivating, don't need to do anything special - just allow commands again
-  }; 
+  };
 
   // Publish velocity commands to ROS
   const publishVelocityCommand = () => {
@@ -91,12 +94,12 @@ function Input({ ros, connection }: RosIntegrationProps) {
       console.error("Cannot publish", {
         ros: !!ros,
         connection,
-        publisher: !!cmdVelPublisher
+        publisher: !!cmdVelPublisher,
       });
       return;
     }
 
-    if (eStopActive){
+    if (eStopActive) {
       return;
     }
 
@@ -105,13 +108,13 @@ function Input({ ros, connection }: RosIntegrationProps) {
       linear: {
         x: 0,
         y: 0,
-        z: 0
+        z: 0,
       },
       angular: {
         x: 0,
         y: 0,
-        z: 0
-      }
+        z: 0,
+      },
     };
 
     // Apply speed modifier
@@ -122,39 +125,39 @@ function Input({ ros, connection }: RosIntegrationProps) {
     // Modify velocity based on direction
     if (direction) {
       switch (direction) {
-        case 'u': // Forward-Left
+        case "u": // Forward-Left
           twistMsg.linear.x = currentLinearSpeed;
           twistMsg.angular.z = currentAngularSpeed;
           break;
-        case 'i': // Forward
+        case "i": // Forward
           twistMsg.linear.x = currentLinearSpeed;
           twistMsg.angular.z = 0;
           break;
-        case 'o': // Forward-Right
+        case "o": // Forward-Right
           twistMsg.linear.x = currentLinearSpeed;
           twistMsg.angular.z = -currentAngularSpeed;
           break;
-        case 'j': // Left
+        case "j": // Left
           twistMsg.linear.x = 0;
           twistMsg.angular.z = currentAngularSpeed;
           break;
-        case 'k': // Stop
+        case "k": // Stop
           twistMsg.linear.x = 0;
           twistMsg.angular.z = 0;
           break;
-        case 'l': // Right
+        case "l": // Right
           twistMsg.linear.x = 0;
           twistMsg.angular.z = -currentAngularSpeed;
           break;
-        case 'm': // Backward-Left
+        case "m": // Backward-Left
           twistMsg.linear.x = -currentLinearSpeed;
           twistMsg.angular.z = currentAngularSpeed;
           break;
-        case ',': // Backward
+        case ",": // Backward
           twistMsg.linear.x = -currentLinearSpeed;
           twistMsg.angular.z = 0;
           break;
-        case '.': // Backward-Right
+        case ".": // Backward-Right
           twistMsg.linear.x = -currentLinearSpeed;
           twistMsg.angular.z = -currentAngularSpeed;
           break;
@@ -169,12 +172,12 @@ function Input({ ros, connection }: RosIntegrationProps) {
   // Explicitly send a stop command
   const sendStopCommand = () => {
     if (!ros || !connection || !cmdVelPublisher) return;
-    
+
     const stopMsg: TwistMessage = {
       linear: { x: 0, y: 0, z: 0 },
-      angular: { x: 0, y: 0, z: 0 }
+      angular: { x: 0, y: 0, z: 0 },
     };
-    
+
     // Send stop command multiple times to ensure it's received
     cmdVelPublisher.publish(new ROSLIB.Message(stopMsg));
     setTimeout(() => {
@@ -193,7 +196,7 @@ function Input({ ros, connection }: RosIntegrationProps) {
       intervalRef.current = null;
     }
 
-    if (eStopActive){
+    if (eStopActive) {
       return;
     }
 
@@ -226,19 +229,19 @@ function Input({ ros, connection }: RosIntegrationProps) {
   const handleKeyUp = (event: KeyboardEvent) => {
     const key = event.key;
 
-    if (key == " " && eStopActive){
+    if (key == " " && eStopActive) {
       setEStopActive(false);
       return;
     }
     if (["u", "i", "o", "j", "k", "l", "m", ",", "."].includes(key)) {
-      setKeyPressed(prev => ({ ...prev, [key]: false }));
+      setKeyPressed((prev) => ({ ...prev, [key]: false }));
       setRemoveDirection(key);
       setDirection(null); // This will trigger the effect to stop the robot
 
-      if (cmdVelPublisher && !eStopActive){
+      if (cmdVelPublisher && !eStopActive) {
         const stopMsg: TwistMessage = {
-          linear: {x: 0, y: 0 , z: 0 },
-          angular: {x: 0, y: 0, z: 0}
+          linear: { x: 0, y: 0, z: 0 },
+          angular: { x: 0, y: 0, z: 0 },
         };
         cmdVelPublisher.publish(new ROSLIB.Message(stopMsg));
       }
@@ -251,44 +254,44 @@ function Input({ ros, connection }: RosIntegrationProps) {
   const handleKeyDown = (event: KeyboardEvent) => {
     const key = event.key;
 
-    if (key == " "){
+    if (key == " ") {
       setEStopActive(true);
       setDirection(null);
       sendEStopCommand();
       return;
     }
 
-    if (eStopActive){
+    if (eStopActive) {
       return;
     }
 
     // Handle direction keys
     if (["u", "i", "o", "j", "k", "l", "m", ",", "."].includes(key)) {
-      setKeyPressed(prev => ({ ...prev, [key]: true }));
+      setKeyPressed((prev) => ({ ...prev, [key]: true }));
       setDirection(key);
     }
     // Handle speed controls
     else if (["q", "z", "w", "x", "e", "c"].includes(key)) {
       const el = document.getElementById(key);
       el?.classList.add("text-red-500", "scale-96", "shadow-inner");
-      
+
       // Overall speed
       if (key === "q") {
-        setOverallSpeed(prev => Math.min(prev + 1, maxSpeed));
+        setOverallSpeed((prev) => Math.min(prev + 1, maxSpeed));
       } else if (key === "z") {
-        setOverallSpeed(prev => Math.max(prev - 1, 0));
+        setOverallSpeed((prev) => Math.max(prev - 1, 0));
       }
       // Linear speed
       else if (key === "w") {
-        setLinearSpeed(prev => Math.min(prev + 1, maxSpeed));
+        setLinearSpeed((prev) => Math.min(prev + 1, maxSpeed));
       } else if (key === "x") {
-        setLinearSpeed(prev => Math.max(prev - 1, 0.1));
+        setLinearSpeed((prev) => Math.max(prev - 1, 0.1));
       }
       // Angular speed
       else if (key === "e") {
-        setAngularSpeed(prev => Math.min(prev + 1, maxSpeed));
+        setAngularSpeed((prev) => Math.min(prev + 1, maxSpeed));
       } else if (key === "c") {
-        setAngularSpeed(prev => Math.max(prev - 1, 0.1));
+        setAngularSpeed((prev) => Math.max(prev - 1, 0.1));
       }
     }
   };
@@ -313,11 +316,11 @@ function Input({ ros, connection }: RosIntegrationProps) {
   useEffect(() => {
     window.addEventListener("keydown", handleKeyDown);
     window.addEventListener("keyup", handleKeyUp);
-    
+
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
       window.removeEventListener("keyup", handleKeyUp);
-      
+
       // Make sure to send a stop command when unmounting
       sendStopCommand();
     };
@@ -325,49 +328,58 @@ function Input({ ros, connection }: RosIntegrationProps) {
 
   //debugging
   useEffect(() => {
-    console.log("ROS Connection Status:", connection)
+    console.log("ROS Connection Status:", connection);
   }, [connection]);
 
   useEffect(() => {
-    if (ros&&connection){
+    if (ros && connection) {
       console.log("ROS is connected, publisher available", !!cmdVelPublisher);
     }
   }, [ros, connection]);
 
-
-
   return (
-    <div className="rounded-lg bg-gray-100 w-[100%] h-80 justify-center p-5 relative mx-auto">
-      <div className="flex items-center justify-between gap-5">
-        <div className="w-70 h-60 rounded-lg bg-gray-200 grid grid-cols-3 grid-rows-3 gap-5 p-5 align-middle justify-center">
-          <Key letter="q" />
-          <Key letter="w" />
-          <Key letter="e" />
-          <SpeedIndicator speed={overallSpeed} maxSpeed={maxSpeed} />
-          <SpeedIndicator speed={linearSpeed} maxSpeed={maxSpeed} />
-          <SpeedIndicator speed={angularSpeed} maxSpeed={maxSpeed} />
-          <Key letter="z" />
-          <Key letter="x" />
-          <Key letter="c" />
-        </div>
-        <div className="w-70 h-60 rounded-lg bg-gray-200 grid grid-cols-3 grid-rows-3 gap-5 p-5 align-middle justify-center">
-          <Key letter="u" />
-          <Key letter="i" />
-          <Key letter="o" />
-          <Key letter="j" />
-          <Key letter="k" />
-          <Key letter="l" />
-          <Key letter="m" />
-          <Key letter="," />
-          <Key letter="." />
-        </div>
+    <div className="grid grid-cols-2">
+      <div className="col-span-1">
+        <Telemetry connection={connection} direction={direction} />
       </div>
-      <div 
-        id="e-stop"
-        className={`h-10 w-72 ${eStopActive ? 'bg-red-500 text-black' : 'bg-green-500 text-white'} rounded-md px-3 font-semibold mx-auto mt-3 text-center flex items-center justify-center cursor-pointer transition-colors- duration-300 ease-in-out border-2 ${eStopActive ? 'border-red-700' : 'border-green-700'}`}
-        onClick={toggleEStop}
+      <div className="rounded-lg w-[100%] h-80 justify-center p-5 relative">
+        <div className="flex items-center justify-between gap-5">
+          <div className="w-70 h-60 rounded-lg bg-gray-200 grid grid-cols-3 grid-rows-3 gap-5 p-5 align-middle justify-center">
+            <Key letter="q" />
+            <Key letter="w" />
+            <Key letter="e" />
+            <SpeedIndicator speed={overallSpeed} maxSpeed={maxSpeed} />
+            <SpeedIndicator speed={linearSpeed} maxSpeed={maxSpeed} />
+            <SpeedIndicator speed={angularSpeed} maxSpeed={maxSpeed} />
+            <Key letter="z" />
+            <Key letter="x" />
+            <Key letter="c" />
+          </div>
+          <div className="w-70 h-60 rounded-lg bg-gray-200 grid grid-cols-3 grid-rows-3 gap-5 p-5 align-middle justify-center">
+            <Key letter="u" />
+            <Key letter="i" />
+            <Key letter="o" />
+            <Key letter="j" />
+            <Key letter="k" />
+            <Key letter="l" />
+            <Key letter="m" />
+            <Key letter="," />
+            <Key letter="." />
+          </div>
+        </div>
+        <div
+          id="e-stop"
+          className={`h-10 w-72 ${
+            eStopActive ? "bg-red-500 text-black" : "bg-green-500 text-white"
+          } rounded-md px-3 font-semibold mx-auto mt-3 text-center flex items-center justify-center cursor-pointer transition-colors- duration-300 ease-in-out border-2 ${
+            eStopActive ? "border-red-700" : "border-green-700"
+          }`}
+          onClick={toggleEStop}
         >
-          {eStopActive ? "E-STOP ACTIVE(CLICK TO RELEASE E-STOP)" : "PRESS SPACE FOR E-STOP"}
+          {eStopActive
+            ? "E-STOP ACTIVE(CLICK TO RELEASE E-STOP)"
+            : "PRESS SPACE FOR E-STOP"}
+        </div>
       </div>
     </div>
   );
