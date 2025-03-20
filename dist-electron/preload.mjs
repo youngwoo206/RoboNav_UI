@@ -17,6 +17,8 @@ electron.contextBridge.exposeInMainWorld("ipcRenderer", {
     const [channel, ...omit] = args;
     return electron.ipcRenderer.invoke(channel, ...omit);
   }
-  // You can expose other APTs you need here.
-  // ...
+});
+electron.contextBridge.exposeInMainWorld("electronAPI", {
+  saveFile: (content, filename, images) => electron.ipcRenderer.invoke("save-file", { content, filename, images }),
+  saveAsPDF: (defect, cameraImage, slamMapImage, filename) => electron.ipcRenderer.invoke("saveAsPDF", { defect, cameraImage, slamMapImage, filename })
 });
