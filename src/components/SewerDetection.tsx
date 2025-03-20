@@ -33,7 +33,7 @@ function SewerDetection({ connection, ros }: CameraProps) {
 
   const CAMERA_TOPIC = "/husky3/camera_0/color/image_raw/compressed";
   const MESSAGE_TYPE = "sensor_msgs/msg/CompressedImage";
-  const MODEL_PATH = "./model/sewer_light.onnx";
+  const MODEL_PATH = "./model/sewer_light_320.onnx";
   const THROTTLE_INTERVAL = 1000;
   const THRESHOLD = 0.1; // 70% confidence
   const DEFECT_PERSISTENCE_TIMEOUT = 2000;
@@ -92,9 +92,9 @@ function SewerDetection({ connection, ros }: CameraProps) {
     // YOLOv8 output format is [batch, values_per_point, num_points]
     if (outputShape.length === 3) {
       const [batch, values_per_point, num_points] = outputShape;
-      console.log(
-        `YOLOv8 output shape: [${batch}, ${values_per_point}, ${num_points}]`
-      );
+      // console.log(
+      //   `YOLOv8 output shape: [${batch}, ${values_per_point}, ${num_points}]`
+      // );
 
       const detections: number[][] = [];
 
@@ -130,26 +130,26 @@ function SewerDetection({ connection, ros }: CameraProps) {
           // Convert from center coordinates to corner coordinates
           const x1 = Math.max(0, x - w / 2);
           const y1 = Math.max(0, y - h / 2);
-          const x2 = Math.min(640, x + w / 2);
-          const y2 = Math.min(640, y + h / 2);
+          const x2 = Math.min(320, x + w / 2);
+          const y2 = Math.min(320, y + h / 2);
 
-          console.log(
-            `Detection at point ${point}: [${x1.toFixed(1)},${y1.toFixed(
-              1
-            )},${x2.toFixed(1)},${y2.toFixed(1)}], ` +
-              `Confidence: ${confidence.toFixed(
-                4
-              )}, Class: ${maxClassIdx}, Final score: ${score.toFixed(4)}`
-          );
+          // console.log(
+          //   `Detection at point ${point}: [${x1.toFixed(1)},${y1.toFixed(
+          //     1
+          //   )},${x2.toFixed(1)},${y2.toFixed(1)}], ` +
+          //     `Confidence: ${confidence.toFixed(
+          //       4
+          //     )}, Class: ${maxClassIdx}, Final score: ${score.toFixed(4)}`
+          // );
 
           // Add detection if it passes our threshold
           detections.push([x1, y1, x2, y2, confidence]);
         }
       }
 
-      console.log(
-        `Found ${detections.length} detections above threshold ${THRESHOLD}`
-      );
+      // console.log(
+      //   `Found ${detections.length} detections above threshold ${THRESHOLD}`
+      // );
 
       // Update tracked defects if any were found
       if (detections.length > 0) {
@@ -185,18 +185,18 @@ function SewerDetection({ connection, ros }: CameraProps) {
         img.onerror = () => reject(new Error("Failed to load image"));
       });
 
-      // Draw to canvas at correct input size (640x640)
+      // Draw to canvas at correct input size (320x320)
       const canvas = canvasRef.current;
       const ctx = canvas.getContext("2d");
       if (!ctx) return;
 
-      // Set canvas dimensions to 640x640 for YOLO model
-      canvas.width = 640;
-      canvas.height = 640;
-      ctx.drawImage(img, 0, 0, 640, 640);
+      // Set canvas dimensions to 320x320 for YOLO model
+      canvas.width = 320;
+      canvas.height = 320;
+      ctx.drawImage(img, 0, 0, 320, 320);
 
       // Get image data
-      const imageData = ctx.getImageData(0, 0, 640, 640);
+      const imageData = ctx.getImageData(0, 0, 320, 320);
       const { data, width, height } = imageData;
 
       // Create tensor for YOLO model (normalized to 0-1)
@@ -227,7 +227,6 @@ function SewerDetection({ connection, ros }: CameraProps) {
       const feeds = {};
       feeds[inputName] = inputTensor;
 
-      console.log("Running inference...");
       const results = await sessionRef.current.run(feeds);
 
       // Process YOLO output
@@ -421,9 +420,9 @@ function SewerDetection({ connection, ros }: CameraProps) {
 
     if (trackedDefects.length === 0) return;
 
-    // Original image dimensions from preprocessing (640x640 for YOLO)
-    const origWidth = 640;
-    const origHeight = 640;
+    // Original image dimensions from preprocessing (320x320 for YOLO)
+    const origWidth = 320;
+    const origHeight = 320;
 
     // Display dimensions
     const displayWidth = canvas.width;
@@ -455,9 +454,9 @@ function SewerDetection({ connection, ros }: CameraProps) {
       const displayHeight = (imgY2 - imgY1) * scaleY;
 
       // Debug logs
-      console.log(
-        `Drawing box: [${displayX1}, ${displayY1}, ${displayWidth}, ${displayHeight}]`
-      );
+      // console.log(
+      //   `Drawing box: [${displayX1}, ${displayY1}, ${displayWidth}, ${displayHeight}]`
+      // );
 
       // Draw bounding box (red outline)
       ctx.beginPath();
