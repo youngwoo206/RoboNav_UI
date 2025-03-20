@@ -31,7 +31,7 @@ function SewerDetection({ connection, ros }: CameraProps) {
   const MESSAGE_TYPE = "sensor_msgs/msg/CompressedImage";
   const MODEL_PATH = "./model/sewer_light.onnx";
   const THROTTLE_INTERVAL = 1000;
-  const THRESHOLD = 70; // 70% confidence
+  const THRESHOLD = 0.1; // 70% confidence
   const DEFECT_PERSISTENCE_TIMEOUT = 2000;
   const IOU_THRESHOLD = 0.1;
 
@@ -93,7 +93,6 @@ function SewerDetection({ connection, ros }: CameraProps) {
       );
 
       const detections: number[][] = [];
-      const threshold = 0.7; // 70% confidence (adjust to match your THRESHOLD)
 
       // Process each potential detection point
       for (let point = 0; point < num_points; point++) {
@@ -101,7 +100,7 @@ function SewerDetection({ connection, ros }: CameraProps) {
         const confidence = outputData[4 * num_points + point];
 
         // Only process high confidence detections
-        if (confidence > threshold) {
+        if (confidence > THRESHOLD) {
           // Get coordinates (x, y, width, height)
           const x = outputData[0 * num_points + point];
           const y = outputData[1 * num_points + point];
@@ -145,7 +144,7 @@ function SewerDetection({ connection, ros }: CameraProps) {
       }
 
       console.log(
-        `Found ${detections.length} detections above threshold ${threshold}`
+        `Found ${detections.length} detections above threshold ${THRESHOLD}`
       );
 
       // Update tracked defects if any were found
