@@ -12,6 +12,11 @@ function DisplayLidarVisualization() {
   const controlsRef = useRef<OrbitControls | null>(null);
   const animationFrameRef = useRef<number | null>(null);
 
+  const MAP = "/maps/ideas_clinic_v2.pcd"
+
+  //EDGE_SE3:QUAT 24 25 1.54137 0.1165 0.0216664 -0.00473401 -0.00573742 0.0354279 0.999345 1 0 0 0 0 0 1 0 0 0 0 1 0 0 0 1 0 0 1 0 1 
+
+
   // Initialize Three.js scene
   useEffect(() => {
     if (!canvasRef.current) return;
@@ -91,7 +96,7 @@ function DisplayLidarVisualization() {
 
     // Load PCD file
     const loader = new PCDLoader();
-    const pcdFilePath = "/maps/map.pcd";
+    const pcdFilePath = MAP;
 
     loader.load(
       pcdFilePath,

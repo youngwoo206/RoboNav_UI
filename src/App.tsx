@@ -1,6 +1,5 @@
 import { useState, useEffect, useRef } from "react";
 import Camera from "./components/Camera";
-// import Camera from "./components/Camera";
 import SewerDetection from "./components/SewerDetection";
 import SLAM from "./components/SLAM";
 // import DefectQueue from "./components/DefectExport";
@@ -185,7 +184,8 @@ Confidence,${defect.confidence.toFixed(2)}%
       <div className="flex justify-center flex-1">
         {/* Use h-full to ensure all children fill the available height */}
         <div className="grid grid-cols-2 gap-5 w-[95%] mt-5 mb-5 justify-center h-full">
-          <SewerDetection connection={connected} ros={ros} />
+          {/* <SewerDetection connection={connected} ros={ros} /> */}
+          <Camera connection={connected} ros={ros} />
           {/* <ImageDisplay 
             imagePath="/image.png" 
             altText="Your Custom Image" 

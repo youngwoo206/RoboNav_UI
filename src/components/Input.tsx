@@ -20,10 +20,11 @@ interface TwistMessage {
 }
 
 interface RosIntegrationProps {
+  ros: Ros | null;
   connection: boolean;
 }
 
-function Input({ connection }: RosIntegrationProps) {
+function Input({ ros, connection }: RosIntegrationProps) {
   const [direction, setDirection] = useState<string | null>(null);
   const [overallSpeed, setOverallSpeed] = useState<number>(0);
   const [linearSpeed, setLinearSpeed] = useState<number>(1.0);
@@ -36,12 +37,13 @@ function Input({ connection }: RosIntegrationProps) {
   // Flag to enable/disable mock data - set to !connection to automatically use
   // mock data when disconnected, or set to true to always use mock data
   const useMockData = !connection;
+  ros = null
 
   // ROS Topic for Cmd Velocity
   const CMD_VEL_TOPIC = "/husky3/cmd_vel";
   const CMD_VEL_TYPE = "geometry_msgs/msg/Twist";
 
-  const ros = null;
+  // const ros = null;
 
   // Create a ROS publisher for cmd_vel
   const cmdVelPublisher = ros
