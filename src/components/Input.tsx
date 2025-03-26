@@ -3,7 +3,7 @@ import ROSLIB from "roslib";
 import Telemetry from "./Telemetry";
 import ImprovedKeypad from "./keypad";
 import DefectExport from "./DefectExport";
-import MockDefectData from "./MockDefect"; // Import the mock data component
+// import MockDefectData from "./MockDefect"; // Import the mock data component
 import { motion } from "framer-motion";
 
 interface TwistMessage {
@@ -20,11 +20,10 @@ interface TwistMessage {
 }
 
 interface RosIntegrationProps {
-  ros: ROSLIB.Ros | null;
   connection: boolean;
 }
 
-function Input({ ros, connection }: RosIntegrationProps) {
+function Input({ connection }: RosIntegrationProps) {
   const [direction, setDirection] = useState<string | null>(null);
   const [overallSpeed, setOverallSpeed] = useState<number>(0);
   const [linearSpeed, setLinearSpeed] = useState<number>(1.0);
@@ -33,7 +32,7 @@ function Input({ ros, connection }: RosIntegrationProps) {
   const [eStopActive, setEStopActive] = useState<boolean>(false);
   const intervalRef = useRef<number | null>(null);
   const maxSpeed: number = 4;
-  
+
   // Flag to enable/disable mock data - set to !connection to automatically use
   // mock data when disconnected, or set to true to always use mock data
   const useMockData = !connection;
@@ -41,6 +40,8 @@ function Input({ ros, connection }: RosIntegrationProps) {
   // ROS Topic for Cmd Velocity
   const CMD_VEL_TOPIC = "/husky3/cmd_vel";
   const CMD_VEL_TYPE = "geometry_msgs/msg/Twist";
+
+  const ros = null;
 
   // Create a ROS publisher for cmd_vel
   const cmdVelPublisher = ros
@@ -54,7 +55,7 @@ function Input({ ros, connection }: RosIntegrationProps) {
   // Send an emergency stop command
   const sendEStopCommand = () => {
     if (!ros || !connection || !cmdVelPublisher) {
-      console.error("Cannot send E-Stop command - no ROS connection");
+      // console.error("Cannot send E-Stop command - no ROS connection");
       return;
     }
 
@@ -95,11 +96,11 @@ function Input({ ros, connection }: RosIntegrationProps) {
   // Publish velocity commands to ROS
   const publishVelocityCommand = () => {
     if (!ros || !connection || !cmdVelPublisher) {
-      console.error("Cannot publish", {
-        ros: !!ros,
-        connection,
-        publisher: !!cmdVelPublisher,
-      });
+      // console.error("Cannot publish", {
+      //   ros: !!ros,
+      //   connection,
+      //   publisher: !!cmdVelPublisher,
+      // });
       return;
     }
 
@@ -237,7 +238,7 @@ function Input({ ros, connection }: RosIntegrationProps) {
       setEStopActive(false);
       return;
     }
-    
+
     if (["u", "i", "o", "j", "k", "l", "m", ",", "."].includes(key)) {
       setKeyPressed((prev) => ({ ...prev, [key]: false }));
       setDirection(null); // This will trigger the effect to stop the robot
@@ -308,17 +309,17 @@ function Input({ ros, connection }: RosIntegrationProps) {
     <div className="w-full bg-gray-400">
       {/* Include the mock data component when connection is not available */}
       {/* {useMockData && <MockDefectData enabled={true} />} */}
-      
+
       <div className="bg-gray-400 w-full">
         <div className="grid grid-cols-3 gap-5">
           {/* Column 1: Telemetry */}
           <div className="bg-gray-300 rounded-lg p-4">
             <Telemetry connection={connection} direction={direction} />
           </div>
-          
+
           {/* Column 2: Controls */}
           <div className="bg-gray-300 rounded-lg p-4">
-            <ImprovedKeypad 
+            <ImprovedKeypad
               directionKeys={keyPressed}
               eStopActive={eStopActive}
               overallSpeed={overallSpeed}
@@ -328,14 +329,14 @@ function Input({ ros, connection }: RosIntegrationProps) {
               toggleEStop={toggleEStop}
             />
           </div>
-          
+
           {/* Column 3: Defect Queue */}
           <div className="bg-gray-300 rounded-lg p-4">
             <DefectExport />
           </div>
         </div>
       </div>
-      
+
       {/* Connection status indicator - Optional */}
       {/* {!connection && (
         <div className="mt-2 text-center text-sm text-white bg-indigo-800 rounded-lg py-1 mx-auto w-max px-3">

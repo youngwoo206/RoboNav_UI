@@ -2,6 +2,7 @@ import { Ros } from "roslib";
 import LidarVisualization from "./LidarVisualization";
 import FastLidarVisualization from "./FastLidarVisualization";
 import MultithreadLidarVisualization from "./MultithreadLidarVisualization";
+import DisplayLidarVisualization from "./DisplayLidarVisualization";
 
 interface SLAMProps {
   connection?: boolean;
@@ -18,7 +19,8 @@ function SLAM({ connection = false, ros = null }: SLAMProps) {
       ) : (
         // <LidarVisualization ros={ros} connection={connection} />
         // <FastLidarVisualization ros={ros} connection={connection} />
-        <MultithreadLidarVisualization ros={ros} connection={connection} />
+        // <MultithreadLidarVisualization ros={ros} connection={connection} />
+        <DisplayLidarVisualization />
       )}
     </div>
   );
