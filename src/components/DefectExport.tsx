@@ -68,20 +68,20 @@ const DefectQueue: React.FC<DefectQueueProps> = ({
   };
 
   return (
-    <div className={`flex flex-col h-full border rounded-lg shadow-sm ${className}`}>
+    <div className={`flex flex-col h-full rounded-lg ${className}`}>
       {/* Header */}
-      <div className="p-3 bg-gray-100 border-b flex justify-between items-center">
-        <h2 className="text-lg font-semibold flex items-center">
+      <div className="p-3 bg-gray-400 flex justify-between items-center">
+        <h2 className="text-lg text-black font-semibold flex items-center">
           <List className="mr-2" size={18} />
           Defects Queue
         </h2>
-        <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded-full text-xs font-medium">
+        <span className="bg-blue-100 text-black px-2 py-1 rounded-full text-xs font-medium">
           {defects.length} detected
         </span>
       </div>
       
       {/* Defects List */}
-      <div className="flex flex-col flex-1 overflow-hidden">
+      <div className="bg-gray-300 bg-opacity-40 flex flex-col flex-1 overflow-hidden">
         <div className="overflow-y-auto flex-1">
           {defects.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full text-gray-500 p-6">
@@ -102,7 +102,8 @@ const DefectQueue: React.FC<DefectQueueProps> = ({
                     <div>
                       <h3 className="font-medium">Defect #{defect.id}</h3>
                       <p className="text-sm text-gray-600">
-                        {new Date(defect.timestamp).toLocaleString()}
+                        {/* {new Date(defect.timestamp).toLocaleString()} */}
+                        {defect.timestamp}
                       </p>
                       <p className="text-sm text-gray-500 mt-1">
                         <span className="flex items-center">
@@ -151,7 +152,8 @@ const DefectQueue: React.FC<DefectQueueProps> = ({
               <div>
                 <span className="text-gray-500">Detected:</span>
                 <span className="font-medium ml-1">
-                  {new Date(selectedDefect.timestamp).toLocaleString()}
+                  {/* {new Date(selectedDefect.timestamp).toLocaleString()} */}
+                  {"ssss"}
                 </span>
               </div>
               <div>

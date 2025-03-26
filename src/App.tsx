@@ -8,6 +8,7 @@ import Dashboard from "./components/Dashboard";
 import ROSLIB, { Ros } from "roslib";
 import DefectQueueTest from "./components/DefectQueueTest";
 import { DataProvider } from "./context/DataProvider";
+import ImageDisplay from "./components/image";
 
 // Define interfaces for your defect data
 interface Position {
@@ -171,7 +172,7 @@ Confidence,${defect.confidence.toFixed(2)}%
         });
       }
       
-      console.log(`Exported defect #${defect.id} as ${format}`);
+      // console.log(`Exported defect #${defect.id} as ${format}`);
     } catch (error) {
       console.error("Export failed:", error);
     }
@@ -179,16 +180,26 @@ Confidence,${defect.confidence.toFixed(2)}%
 
   return (
     
-    <div className="flex justify-center ">
-      <div className="grid grid-cols-2 gap-5 w-[95%] mt-5 justify-center">
-        {/* <Camera connection={connected} ros={ros} /> */}
-        {/* <FaceDetection connection={connected} ros={ros} /> */}
-        <SewerDetection connection={connected} ros={ros} />
-        <SLAM connection={true} ros={ros} />
-        <Dashboard connection={connected} ros={ros} />
+    <div className="flex flex-col min-h-screen bg-gray-400">
+      {/* Use flex-1 to make this grow and fill available space */}
+      <div className="flex justify-center flex-1">
+        {/* Use h-full to ensure all children fill the available height */}
+        <div className="grid grid-cols-2 gap-5 w-[95%] mt-5 mb-5 justify-center h-full">
+          <SewerDetection connection={connected} ros={ros} />
+          {/* <ImageDisplay 
+            imagePath="/image.png" 
+            altText="Your Custom Image" 
+          />
+          <ImageDisplay 
+            imagePath="/image2.png" 
+            altText="Your Custom Image" 
+          /> */}
+          <SLAM connection={true} ros={ros} />
+          {/* Dashboard now spans full width of its grid cell */}
+          <Dashboard connection={connected} ros={ros} />
+        </div>
       </div>
     </div>
-    
   );
 }
 

@@ -1,9 +1,10 @@
-/* eslint-disable @typescript-eslint/no-unused-vars */
 import { useState, useEffect, useRef } from "react";
 import ROSLIB from "roslib";
-import Key from "./Key";
-import SpeedIndicator from "./SpeedIndicator";
 import Telemetry from "./Telemetry";
+import ImprovedKeypad from "./keypad";
+import DefectExport from "./DefectExport";
+import MockDefectData from "./MockDefect"; // Import the mock data component
+import { motion } from "framer-motion";
 
 interface TwistMessage {
   linear: {
@@ -25,7 +26,6 @@ interface RosIntegrationProps {
 
 function Input({ ros, connection }: RosIntegrationProps) {
   const [direction, setDirection] = useState<string | null>(null);
-  const [removeDirection, setRemoveDirection] = useState<string | null>(null);
   const [overallSpeed, setOverallSpeed] = useState<number>(0);
   const [linearSpeed, setLinearSpeed] = useState<number>(1.0);
   const [angularSpeed, setAngularSpeed] = useState<number>(1.0);
@@ -33,6 +33,10 @@ function Input({ ros, connection }: RosIntegrationProps) {
   const [eStopActive, setEStopActive] = useState<boolean>(false);
   const intervalRef = useRef<number | null>(null);
   const maxSpeed: number = 4;
+  
+  // Flag to enable/disable mock data - set to !connection to automatically use
+  // mock data when disconnected, or set to true to always use mock data
+  const useMockData = !connection;
 
   // ROS Topic for Cmd Velocity
   const CMD_VEL_TOPIC = "/husky3/cmd_vel";
@@ -217,7 +221,7 @@ function Input({ ros, connection }: RosIntegrationProps) {
         intervalRef.current = null;
       }
     };
-  }, [direction, connection, ros]);
+  }, [direction, connection, ros, eStopActive]);
 
   // Update when speeds change
   useEffect(() => {
@@ -229,32 +233,25 @@ function Input({ ros, connection }: RosIntegrationProps) {
   const handleKeyUp = (event: KeyboardEvent) => {
     const key = event.key;
 
-    if (key == " " && eStopActive) {
+    if (key === " " && eStopActive) {
       setEStopActive(false);
       return;
     }
+    
     if (["u", "i", "o", "j", "k", "l", "m", ",", "."].includes(key)) {
       setKeyPressed((prev) => ({ ...prev, [key]: false }));
-      setRemoveDirection(key);
       setDirection(null); // This will trigger the effect to stop the robot
 
       if (cmdVelPublisher && !eStopActive) {
-        const stopMsg: TwistMessage = {
-          linear: { x: 0, y: 0, z: 0 },
-          angular: { x: 0, y: 0, z: 0 },
-        };
-        cmdVelPublisher.publish(new ROSLIB.Message(stopMsg));
+        sendStopCommand();
       }
-    } else if (["q", "z", "w", "x", "e", "c"].includes(key)) {
-      const el = document.getElementById(key);
-      el?.classList.remove("text-red-500", "scale-96", "shadow-inner");
     }
   };
 
   const handleKeyDown = (event: KeyboardEvent) => {
     const key = event.key;
 
-    if (key == " ") {
+    if (key === " ") {
       setEStopActive(true);
       setDirection(null);
       sendEStopCommand();
@@ -272,9 +269,6 @@ function Input({ ros, connection }: RosIntegrationProps) {
     }
     // Handle speed controls
     else if (["q", "z", "w", "x", "e", "c"].includes(key)) {
-      const el = document.getElementById(key);
-      el?.classList.add("text-red-500", "scale-96", "shadow-inner");
-
       // Overall speed
       if (key === "q") {
         setOverallSpeed((prev) => Math.min(prev + 1, maxSpeed));
@@ -296,22 +290,6 @@ function Input({ ros, connection }: RosIntegrationProps) {
     }
   };
 
-  // Visual feedback for key presses
-  useEffect(() => {
-    if (direction) {
-      const el = document.getElementById(direction);
-      el?.classList.add("text-red-500", "scale-96", "shadow-inner");
-    }
-  }, [direction]);
-
-  useEffect(() => {
-    if (removeDirection) {
-      const el = document.getElementById(removeDirection);
-      el?.classList.remove("text-red-500", "scale-96", "shadow-inner");
-      setRemoveDirection(null);
-    }
-  }, [removeDirection]);
-
   // Add event listeners
   useEffect(() => {
     window.addEventListener("keydown", handleKeyDown);
@@ -324,63 +302,46 @@ function Input({ ros, connection }: RosIntegrationProps) {
       // Make sure to send a stop command when unmounting
       sendStopCommand();
     };
-  }, []);
-
-  //debugging
-  useEffect(() => {
-    console.log("ROS Connection Status:", connection);
-  }, [connection]);
-
-  useEffect(() => {
-    if (ros && connection) {
-      console.log("ROS is connected, publisher available", !!cmdVelPublisher);
-    }
-  }, [ros, connection]);
+  }, [eStopActive]);
 
   return (
-    <div className="grid grid-cols-2">
-      <div className="col-span-1">
-        <Telemetry connection={connection} direction={direction} />
-      </div>
-      <div className="rounded-lg w-[100%] h-80 justify-center p-5 relative">
-        <div className="flex items-center justify-between gap-5">
-          <div className="w-70 h-60 rounded-lg bg-gray-200 grid grid-cols-3 grid-rows-3 gap-5 p-5 align-middle justify-center">
-            <Key letter="q" />
-            <Key letter="w" />
-            <Key letter="e" />
-            <SpeedIndicator speed={overallSpeed} maxSpeed={maxSpeed} />
-            <SpeedIndicator speed={linearSpeed} maxSpeed={maxSpeed} />
-            <SpeedIndicator speed={angularSpeed} maxSpeed={maxSpeed} />
-            <Key letter="z" />
-            <Key letter="x" />
-            <Key letter="c" />
+    <div className="w-full bg-gray-400">
+      {/* Include the mock data component when connection is not available */}
+      {/* {useMockData && <MockDefectData enabled={true} />} */}
+      
+      <div className="bg-gray-400 w-full">
+        <div className="grid grid-cols-3 gap-5">
+          {/* Column 1: Telemetry */}
+          <div className="bg-gray-300 rounded-lg p-4">
+            <Telemetry connection={connection} direction={direction} />
           </div>
-          <div className="w-70 h-60 rounded-lg bg-gray-200 grid grid-cols-3 grid-rows-3 gap-5 p-5 align-middle justify-center">
-            <Key letter="u" />
-            <Key letter="i" />
-            <Key letter="o" />
-            <Key letter="j" />
-            <Key letter="k" />
-            <Key letter="l" />
-            <Key letter="m" />
-            <Key letter="," />
-            <Key letter="." />
+          
+          {/* Column 2: Controls */}
+          <div className="bg-gray-300 rounded-lg p-4">
+            <ImprovedKeypad 
+              directionKeys={keyPressed}
+              eStopActive={eStopActive}
+              overallSpeed={overallSpeed}
+              linearSpeed={linearSpeed}
+              angularSpeed={angularSpeed}
+              maxSpeed={maxSpeed}
+              toggleEStop={toggleEStop}
+            />
+          </div>
+          
+          {/* Column 3: Defect Queue */}
+          <div className="bg-gray-300 rounded-lg p-4">
+            <DefectExport />
           </div>
         </div>
-        <div
-          id="e-stop"
-          className={`h-10 w-72 ${
-            eStopActive ? "bg-red-500 text-black" : "bg-green-500 text-white"
-          } rounded-md px-3 font-semibold mx-auto mt-3 text-center flex items-center justify-center cursor-pointer transition-colors- duration-300 ease-in-out border-2 ${
-            eStopActive ? "border-red-700" : "border-green-700"
-          }`}
-          onClick={toggleEStop}
-        >
-          {eStopActive
-            ? "E-STOP ACTIVE(CLICK TO RELEASE E-STOP)"
-            : "PRESS SPACE FOR E-STOP"}
-        </div>
       </div>
+      
+      {/* Connection status indicator - Optional */}
+      {/* {!connection && (
+        <div className="mt-2 text-center text-sm text-white bg-indigo-800 rounded-lg py-1 mx-auto w-max px-3">
+          Using mock defect data (No connection)
+        </div>
+      )} */}
     </div>
   );
 }

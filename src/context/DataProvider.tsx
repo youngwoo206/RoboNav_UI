@@ -20,7 +20,7 @@ export interface Defect {
 export interface TrackedDefect {
   id: number;
   box: number[]; // [x1, y1, x2, y2, confidence]
-  lastSeen: number;
+  lastSeen: string;
 }
 
 export interface ExportData {
